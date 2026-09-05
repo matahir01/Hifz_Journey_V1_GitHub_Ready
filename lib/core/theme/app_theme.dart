@@ -1,2 +1,27 @@
 import 'package:flutter/material.dart';
-class AppTheme {static ThemeData light()=>ThemeData(useMaterial3:true,brightness:Brightness.light,scaffoldBackgroundColor:const Color(0xFFF7F6F1),colorScheme:ColorScheme.fromSeed(seedColor:const Color(0xFF1D6B52),brightness:Brightness.light),fontFamily:'sans');static ThemeData dark()=>ThemeData(useMaterial3:true,brightness:Brightness.dark,colorScheme:ColorScheme.fromSeed(seedColor:const Color(0xFF5CC49A),brightness:Brightness.dark));}
+
+class AppTheme {
+  static ThemeData light() {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.light,
+      scaffoldBackgroundColor: const Color(0xFFF7F6F1),
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1D6B52),
+        brightness: Brightness.light,
+      ),
+      fontFamily: 'sans',
+    );
+  }
+
+  static ThemeData dark() {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFF5CC49A),
+        brightness: Brightness.dark,
+      ),
+    );
+  }
+}

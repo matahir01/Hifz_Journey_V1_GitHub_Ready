@@ -1,9 +1,99 @@
 import 'package:sqflite/sqflite.dart';
+
 import '../../core/database/app_database.dart';
-class HifzRepository { final AppDatabase database; HifzRepository(this.database);
- Future<Map<String,Object?>?> progress(int id) async {final d=await database.db;final r=await d.query('hifz_progress',where:'ayah_id=?',whereArgs:[id],limit:1);return r.isEmpty?null:r.first;}
- Future<void> ensure(int id) async {final d=await database.db; await d.insert('hifz_progress',{'ayah_id':id},conflictAlgorithm:ConflictAlgorithm.ignore);}
- Future<void> record(int id,bool success,{double? score}) async {final d=await database.db;await ensure(id);final now=DateTime.now();final old=await progress(id);final s=(old?['strength'] as num? ?? 0).toDouble();final good=success;final ns=(good?s+((100-s)*.22):s*.55).clamp(0,100);final succ=(old?['successful_recalls'] as int? ?? 0)+(good?1:0);final fail=(old?['failed_recalls'] as int? ?? 0)+(good?0:1);final cons=good?(old?['consecutive_successes'] as int? ?? 0)+1:0;final interval=good?[1,2,4,7,14,30,60][((cons-1).clamp(0,6))]:1;final next=now.add(Duration(days:interval));String status=ns>=85?'mastered':ns>=65?'stable':ns>0?'learning':'new';await d.update('hifz_progress',{'status':status,'strength':ns,'last_reviewed_at':now.toIso8601String(),'next_review_at':next.toIso8601String(),'successful_recalls':succ,'failed_recalls':fail,'consecutive_successes':cons,'introduced_at':old?['introduced_at']??now.toIso8601String()},where:'ayah_id=?',whereArgs:[id]);}
- Future<List<int>> dueIds({int limit=20}) async {final d=await database.db;final now=DateTime.now().toIso8601String();final r=await d.query('hifz_progress',columns:['ayah_id'],where:'next_review_at IS NOT NULL AND next_review_at<=?',whereArgs:[now],orderBy:'strength ASC,next_review_at ASC',limit:limit);return r.map((x)=>x['ayah_id'] as int).toList();}
- Future<int> memorizedCount() async {final d=await database.db;final r=await d.rawQuery("SELECT COUNT(*) c FROM hifz_progress WHERE strength>=65");return Sqflite.firstIntValue(r)??0;}
+
+class HifzRepository {
+  final AppDatabase database;
+
+  HifzRepository(this.database);
+
+  Future<Map<String, Object?>?> progress(int id) async {
+    final db = await database.db;
+    final rows = await db.query(
+      'hifz_progress',
+      where: 'ayah_id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<void> ensure(int id) async {
+    final db = await database.db;
+    await db.insert(
+      'hifz_progress',
+      {'ayah_id': id},
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
+  Future<void> record(int id, bool success, {double? score}) async {
+    final db = await database.db;
+    await ensure(id);
+
+    final now = DateTime.now();
+    final old = await progress(id);
+    final strength = (old?['strength'] as num? ?? 0).toDouble();
+    final newStrength = (success
+            ? strength + ((100 - strength) * 0.22)
+            : strength * 0.55)
+        .clamp(0, 100)
+        .toDouble();
+    final successfulRecalls =
+        (old?['successful_recalls'] as int? ?? 0) + (success ? 1 : 0);
+    final failedRecalls =
+        (old?['failed_recalls'] as int? ?? 0) + (success ? 0 : 1);
+    final consecutiveSuccesses = success
+        ? (old?['consecutive_successes'] as int? ?? 0) + 1
+        : 0;
+    final intervals = [1, 2, 4, 7, 14, 30, 60];
+    final intervalIndex = (consecutiveSuccesses - 1).clamp(0, 6);
+    final interval = success ? intervals[intervalIndex] : 1;
+    final next = now.add(Duration(days: interval));
+    final status = newStrength >= 85
+        ? 'mastered'
+        : newStrength >= 65
+            ? 'stable'
+            : newStrength > 0
+                ? 'learning'
+                : 'new';
+
+    await db.update(
+      'hifz_progress',
+      {
+        'status': status,
+        'strength': newStrength,
+        'last_reviewed_at': now.toIso8601String(),
+        'next_review_at': next.toIso8601String(),
+        'successful_recalls': successfulRecalls,
+        'failed_recalls': failedRecalls,
+        'consecutive_successes': consecutiveSuccesses,
+        'introduced_at': old?['introduced_at'] ?? now.toIso8601String(),
+      },
+      where: 'ayah_id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<List<int>> dueIds({int limit = 20}) async {
+    final db = await database.db;
+    final now = DateTime.now().toIso8601String();
+    final rows = await db.query(
+      'hifz_progress',
+      columns: ['ayah_id'],
+      where: 'next_review_at IS NOT NULL AND next_review_at <= ?',
+      whereArgs: [now],
+      orderBy: 'strength ASC, next_review_at ASC',
+      limit: limit,
+    );
+    return rows.map((row) => row['ayah_id'] as int).toList();
+  }
+
+  Future<int> memorizedCount() async {
+    final db = await database.db;
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) c FROM hifz_progress WHERE strength >= 65',
+    );
+    return Sqflite.firstIntValue(rows) ?? 0;
+  }
 }

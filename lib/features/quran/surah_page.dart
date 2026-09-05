@@ -34,7 +34,7 @@ class SurahPage extends StatelessWidget {
                   color: Theme.of(context)
                       .colorScheme
                       .surfaceContainerHighest
-                      .withOpacity(.35),
+                      .withValues(alpha: 0.35),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
