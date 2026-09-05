@@ -1,0 +1,1 @@
+Font placeholder. V1 intentionally relies on platform Arabic fallback until a properly licensed Arabic Qur’an font is selected. Do not treat this file as a font asset. Replace the font section in pubspec.yaml when adding a real licensed TTF.
