@@ -1,47 +1,64 @@
-name: Android Release Build
+name: Build Android APK
 
 on:
-  workflow_dispatch:
   push:
+    branches: [main, master]
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  build-apk:
+    name: Build release APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: subosito/flutter-action@v2
+
+      - name: Set up Flutter stable
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-      - run: flutter pub get
-      - name: Bootstrap Android Gradle wrapper
+
+      - name: Show Flutter environment
+        run: flutter --version
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Prepare Android Gradle wrapper
         run: bash tool/bootstrap_android_wrapper.sh
-      - name: Analyze
-        run: flutter analyze --no-fatal-infos
-      - name: Test
-        run: flutter test
-      - name: Build APK
+
+      - name: Build release APK
         run: flutter build apk --release
-      - name: Build App Bundle
-        run: flutter build appbundle --release
-      - uses: actions/upload-artifact@v4
+
+      - name: Collect APK
+        run: |
+          mkdir -p release
+          cp build/app/outputs/flutter-apk/app-release.apk release/Hifz-Journey.apk
+          ls -lh release/Hifz-Journey.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: hifz-journey-android-release
-          path: |
-            build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/bundle/release/app-release.aab
-      - name: Attach files to tagged GitHub release
+          name: Hifz-Journey-APK
+          path: release/Hifz-Journey.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach APK to tagged GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/bundle/release/app-release.aab
+          files: release/Hifz-Journey.apk

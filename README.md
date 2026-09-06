@@ -65,3 +65,8 @@ The bundled Arabic Qur’an text was derived from the supplied Ayat archive, whi
 - Text license: https://tanzil.net/docs/Text_License
 
 Translations and recitation audio are not redistributed in this repository because their licensing must be verified separately.
+
+
+## GitHub Actions
+
+Every push to `main` or `master` performs a real Android release APK build and uploads `Hifz-Journey.apk` as a workflow artifact.
