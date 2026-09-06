@@ -1,25 +1,13 @@
-# GitHub APK Build
+# Hifz Journey Android deployment
 
-This repository is configured to build the Android APK automatically with GitHub Actions.
+The GitHub Actions workflow builds an installable release APK and validates its ZIP structure, Android package metadata, launcher icon entry, and APK signature before uploading it as an artifact.
 
-## Automatic build
+## Test release signing
 
-Every push to `main` or `master` runs `.github/workflows/android_build.yml` and performs a real Flutter release APK build:
+The current CI/test release intentionally uses Android's debug signing configuration so the APK can be installed for testing without requiring GitHub secrets. This is not the final Play Store signing configuration.
 
-```bash
-flutter build apk --release
-```
+Before Play Store distribution, create a private upload key and configure it through GitHub Secrets. Do not commit a production keystore or its passwords to the repository.
 
-When the build succeeds, GitHub uploads this installable APK as the workflow artifact:
+## Launcher icon compatibility fix
 
-`Hifz-Journey-APK` → `Hifz-Journey.apk`
-
-The artifact is retained for 30 days.
-
-## Tagged releases
-
-Pushing a tag such as `v1.0.0` also builds the APK and attaches `Hifz-Journey.apk` to the GitHub Release.
-
-## Android signing
-
-The current V1 release configuration uses the Android debug signing key for the release build so GitHub can produce an installable APK without repository secrets. Before Google Play publication, replace it with a private release keystore and GitHub Actions secrets.
+The Android application uses real PNG launcher icons for all density buckets and no adaptive-icon XML. This avoids the zero-size adaptive foreground drawable that caused the Android Package Installer crash on the previously generated APK.

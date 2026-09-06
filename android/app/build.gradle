@@ -23,14 +23,17 @@ android {
         applicationId 'com.hifzjourney.app'
         minSdk 24
         targetSdk flutter.targetSdkVersion
-        multiDexEnabled true
         versionCode flutter.versionCode
         versionName flutter.versionName
     }
 
     buildTypes {
         release {
+            // Installable CI/test release. For Play Store distribution, replace this
+            // with a private upload/release key held in GitHub Secrets.
             signingConfig signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
         }
     }
 }
@@ -38,7 +41,6 @@ android {
 flutter {
     source '../..'
 }
-
 
 dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'

@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build release APK
+    name: Build installable release APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -43,17 +43,36 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
+      - name: Validate APK archive and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          BUILD_TOOLS="$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/aapt" dump badging "$APK" | tee apk-badging.txt
+          grep -q "package: name='com.hifzjourney.app'" apk-badging.txt
+          grep -q "application-label:'Hifz Journey'" apk-badging.txt
+          grep -q "application-icon-" apk-badging.txt
+
       - name: Collect APK
         run: |
           mkdir -p release
           cp build/app/outputs/flutter-apk/app-release.apk release/Hifz-Journey.apk
+          cp apk-badging.txt release/apk-badging.txt
+          sha256sum release/Hifz-Journey.apk | tee release/Hifz-Journey.apk.sha256
           ls -lh release/Hifz-Journey.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: Hifz-Journey-APK
-          path: release/Hifz-Journey.apk
+          path: |
+            release/Hifz-Journey.apk
+            release/Hifz-Journey.apk.sha256
+            release/apk-badging.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -61,4 +80,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/Hifz-Journey.apk
+          files: |
+            release/Hifz-Journey.apk
+            release/Hifz-Journey.apk.sha256
