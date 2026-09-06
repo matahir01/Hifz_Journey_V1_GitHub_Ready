@@ -8,12 +8,16 @@ class NotificationService {
   Future<void> init() async {
     tz.initializeTimeZones();
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    await _plugin.initialize(
-      const InitializationSettings(
-        android: android,
-        iOS: DarwinInitializationSettings(),
-      ),
+    const settings = InitializationSettings(
+      android: android,
+      iOS: DarwinInitializationSettings(),
     );
+    await _plugin.initialize(settings: settings);
+
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    await androidPlugin?.requestNotificationsPermission();
   }
 
   Future<void> scheduleDaily({int hour = 7, int minute = 0}) async {
@@ -32,11 +36,11 @@ class NotificationService {
     }
 
     await _plugin.zonedSchedule(
-      100,
-      'Your Qur’an journey awaits 🌙',
-      'Take a few minutes to read, revise and memorize.',
-      next,
-      const NotificationDetails(
+      id: 100,
+      title: 'Your Qur’an journey awaits 🌙',
+      body: 'Take a few minutes to read, revise and memorize.',
+      scheduledDate: next,
+      notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           'hifz_daily',
           'Daily Qur’an',

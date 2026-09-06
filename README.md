@@ -35,7 +35,7 @@ flutter run
 flutter build apk --release
 ```
 
-The environment used to assemble this ZIP does not contain the Flutter SDK, so the generated project could not be compiled here. Run `flutter pub get` and `flutter analyze` on a machine with Flutter installed.
+The environment used to assemble this ZIP does not contain the Flutter SDK, so the generated project could not be compiled here. Run `flutter pub get`, `dart format --output=none --set-exit-if-changed lib test`, `flutter analyze`, and `flutter test` on a machine with Flutter installed.
 
 ## Audio
 Place legitimately licensed downloaded recitation files in the app's application support directory. Do not copy recitations from another app unless you have redistribution rights.
