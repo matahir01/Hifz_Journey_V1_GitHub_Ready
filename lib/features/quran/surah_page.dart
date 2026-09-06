@@ -1,21 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
-import '../../core/database/app_database.dart';
 import '../../data/models/ayah.dart';
 import '../../data/models/surah.dart';
 import '../../data/repositories/quran_repository.dart';
 
-class SurahPage extends StatelessWidget {
+class SurahPage extends StatefulWidget {
   final Surah surah;
 
   const SurahPage({super.key, required this.surah});
 
   @override
+  State<SurahPage> createState() => _SurahPageState();
+}
+
+class _SurahPageState extends State<SurahPage> {
+  late Future<List<Ayah>> ayahs;
+
+  @override
+  void initState() {
+    super.initState();
+    ayahs = context.read<QuranRepository>().ayahsForSurah(widget.surah.id);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(surah.nameEn)),
+      appBar: AppBar(title: Text(widget.surah.nameEn)),
       body: FutureBuilder<List<Ayah>>(
-        future: QuranRepository(AppDatabase.instance).ayahsForSurah(surah.id),
+        future: ayahs,
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -72,7 +85,7 @@ class SurahPage extends StatelessWidget {
                 ),
               );
             },
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
           );
         },
       ),

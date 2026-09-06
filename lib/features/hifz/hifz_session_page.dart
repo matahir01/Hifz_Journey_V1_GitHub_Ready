@@ -16,15 +16,25 @@ class HifzSessionPage extends StatefulWidget {
 class _HifzSessionPageState extends State<HifzSessionPage> {
   late Future<HifzPlan> plan;
   final repo = HifzRepository(AppDatabase.instance);
+  late final HifzEngine engine;
   bool hidden = false;
 
   @override
   void initState() {
     super.initState();
-    plan = HifzEngine(
+    engine = HifzEngine(
       QuranRepository(AppDatabase.instance),
       repo,
-    ).today();
+    );
+    plan = engine.today();
+  }
+
+  Future<void> _record(int ayahId, bool success) async {
+    await repo.record(ayahId, success);
+    if (!mounted) return;
+    setState(() {
+      plan = engine.today();
+    });
   }
 
   @override
@@ -119,17 +129,11 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton(
-                          onPressed: () async {
-                            await repo.record(ayah.id, false);
-                            if (mounted) setState(() {});
-                          },
+                          onPressed: () => _record(ayah.id, false),
                           child: const Text('Needs work'),
                         ),
                         FilledButton(
-                          onPressed: () async {
-                            await repo.record(ayah.id, true);
-                            if (mounted) setState(() {});
-                          },
+                          onPressed: () => _record(ayah.id, true),
                           child: const Text('I remembered'),
                         ),
                       ],
