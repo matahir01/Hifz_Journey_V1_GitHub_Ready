@@ -1,8 +1,8 @@
 # Changelog
 
-## 1.0.0-foundation
-
-- Initial offline-first Flutter foundation.
-- Local SQLite Qur'an database.
-- Hifz, revision, reading-progress, bookmark, settings, audio, and notification architecture.
-- GitHub Actions CI and Android release workflow.
+## 1.0.0
+- Completed offline-first Qur’an reader and Hifz V1.
+- Added Surah/Juz/Page navigation, search, bookmarks, and reading progress.
+- Added adaptive Hifz planning, revision, recall tests, and progress metrics.
+- Added persistent settings, theme mode, reminder scheduling, and notification permissions.
+- Migrated Android project to Flutter Plugin DSL and a GitHub-ready build/release workflow.

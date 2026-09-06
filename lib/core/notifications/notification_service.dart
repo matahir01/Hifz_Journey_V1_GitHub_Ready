@@ -1,26 +1,45 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
 class NotificationService {
-  final _plugin = FlutterLocalNotificationsPlugin();
+  static const dailyReminderId = 100;
+
+  final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
 
   Future<void> init() async {
     tz.initializeTimeZones();
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    try {
+      final zone = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(zone.identifier));
+    } catch (_) {
+      // tz.local remains usable even if the platform timezone cannot be read.
+    }
+
     const settings = InitializationSettings(
-      android: android,
-      iOS: DarwinInitializationSettings(),
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      iOS: DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      ),
     );
     await _plugin.initialize(settings: settings);
-
-    final androidPlugin = _plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlugin?.requestNotificationsPermission();
   }
 
-  Future<void> scheduleDaily({int hour = 7, int minute = 0}) async {
+  Future<bool> requestPermission() async {
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    final result = await android?.requestNotificationsPermission();
+    return result ?? true;
+  }
+
+  Future<void> scheduleDaily({required int hour, required int minute}) async {
+    await _plugin.cancel(id: dailyReminderId);
+
     final now = tz.TZDateTime.now(tz.local);
     var next = tz.TZDateTime(
       tz.local,
@@ -30,22 +49,21 @@ class NotificationService {
       hour,
       minute,
     );
-
     if (!next.isAfter(now)) {
       next = next.add(const Duration(days: 1));
     }
 
     await _plugin.zonedSchedule(
-      id: 100,
-      title: 'Your Qur’an journey awaits 🌙',
-      body: 'Take a few minutes to read, revise and memorize.',
+      id: dailyReminderId,
+      title: 'Your Qur’an journey awaits',
+      body: 'Read, revise, and protect what you have memorized.',
       scheduledDate: next,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           'hifz_daily',
-          'Daily Qur’an',
+          'Daily Qur’an reminder',
           channelDescription:
-              'Daily Qur’an reading and memorization reminder',
+              'Daily reading, memorization, and revision reminder',
           importance: Importance.defaultImportance,
           priority: Priority.defaultPriority,
         ),
@@ -55,4 +73,6 @@ class NotificationService {
       matchDateTimeComponents: DateTimeComponents.time,
     );
   }
+
+  Future<void> cancelDaily() => _plugin.cancel(id: dailyReminderId);
 }

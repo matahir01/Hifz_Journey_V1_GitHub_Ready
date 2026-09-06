@@ -1,41 +1,67 @@
-# Hifz Journey — V1 Foundation
+# Hifz Journey
 
-Offline-first Flutter Qur’an reading and memorization companion.
+**Read. Memorize. Revise. Retain.**
 
-## Included
-- Local SQLite Qur’an database (6,236 ayahs) with surah, page and juz metadata.
-- Reading continuation and bookmarks.
-- Hifz progress model and adaptive revision engine.
-- Daily 2–3 ayah default target (configurable).
-- Local notification architecture.
-- Local audio service interface ready for legitimately licensed/downloaded recitations.
-- Polished starter UI: Home, Qur’an, Hifz, Progress, Settings.
-- AI recitation service interface (provider-neutral; no cloud key required).
+Hifz Journey is an offline-first Flutter Qur’an reading and memorization app. V1 needs no account, no cloud backend, and no API key.
 
-## Important content/licensing note
-The Arabic Qur’an text in `assets/quran/quran.db` is a verbatim copy of the text found in the supplied Ayat archive. The archive identifies Tanzil as its source. Tanzil currently states that its Quran text may be used in applications under CC BY 3.0 provided the text is not changed, Tanzil is clearly credited, and the license notice/source link is included. Before publishing, re-verify the exact text against the current Tanzil release and retain the required attribution.
+## Included in V1
 
-Official source: https://tanzil.net/docs/Text_License
-Download/source: https://tanzil.net/download/
+- Complete local Qur’an database: 114 surahs / 6,236 ayahs.
+- Surah, Juz, and page browsing.
+- Full-screen swipe reader with saved reading position.
+- Arabic-text and `surah:ayah` search.
+- Local bookmarks.
+- Daily memorization target.
+- Adaptive retention-first revision intervals.
+- Recall test mode.
+- Progress dashboard with introduced / learning / stable / mastered states.
+- Persistent settings, theme mode, and local daily reminders.
+- Local audio service boundary for future licensed recitation downloads.
+- Provider-neutral recitation-assessment interface for a future AI feature.
+- GitHub Actions for analyze/test and Android APK/AAB release builds.
 
-Translations and recitations are NOT bundled in this V1 package because their individual redistribution terms must be verified separately.
+## GitHub deployment
 
-## Requirements
-- Flutter 3.35+ / Dart 3.9+ recommended.
-- Android SDK 35 recommended.
+Push this repository to GitHub. Every push/PR to `main` runs `flutter analyze` and `flutter test`.
 
-## Run
+To create Android release artifacts, either run the **Android Release Build** workflow manually or push a tag such as:
+
 ```bash
-flutter pub get
-flutter run
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
-## Build Android
-```bash
+The workflow builds both an APK and an Android App Bundle. Tagged builds are also attached to the GitHub Release.
+
+## Local Android build
+
+A Gradle wrapper binary is generated from the installed Flutter SDK so the repository does not need a hand-authored binary wrapper file.
+
+Windows PowerShell:
+
+```powershell
+flutter pub get
+.\tool\bootstrap_android_wrapper.ps1
 flutter build apk --release
 ```
 
-The environment used to assemble this ZIP does not contain the Flutter SDK, so the generated project could not be compiled here. Run `flutter pub get`, `dart format --output=none --set-exit-if-changed lib test`, `flutter analyze`, and `flutter test` on a machine with Flutter installed.
+macOS/Linux:
 
-## Audio
-Place legitimately licensed downloaded recitation files in the app's application support directory. Do not copy recitations from another app unless you have redistribution rights.
+```bash
+flutter pub get
+bash tool/bootstrap_android_wrapper.sh
+flutter build apk --release
+```
+
+## Release signing
+
+The included Android release configuration uses debug signing so GitHub can produce installable test builds immediately. Before publishing to Google Play, replace it with your own release keystore / Play App Signing configuration and keep secrets outside the repository.
+
+## Qur’an text attribution
+
+The bundled Arabic Qur’an text was derived from the supplied Ayat archive, which identifies the Tanzil Project as its text source. Tanzil permits application use under CC BY 3.0 with attribution and requires the Qur’an text to remain verbatim. Re-verify the bundled text against the current Tanzil release before public store publication and retain the required source/license notice.
+
+- Tanzil Project: https://tanzil.net/
+- Text license: https://tanzil.net/docs/Text_License
+
+Translations and recitation audio are not redistributed in this repository because their licensing must be verified separately.

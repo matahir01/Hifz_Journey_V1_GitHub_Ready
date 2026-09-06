@@ -21,22 +21,15 @@ class HifzEngine {
   Future<HifzPlan> today({int target = 3}) async {
     final due = await hifz.dueIds(limit: 20);
     final revision = <Ayah>[];
-
     for (final id in due) {
       final ayah = await quran.ayah(id);
       if (ayah != null) revision.add(ayah);
     }
 
-    final db = await hifz.database.db;
-    final progress = await db.rawQuery(
-      'SELECT MAX(ayah_id) m FROM hifz_progress WHERE introduced_at IS NOT NULL',
-    );
-    final cursor = progress.first['m'] as int?;
-    final newAyahs = await quran.nextAyahs(cursor, target);
-
-    return HifzPlan(
-      revision: revision,
-      newAyahs: newAyahs,
-    );
+    final cursor = await hifz.lastIntroducedAyahId();
+    final introducedToday = await hifz.introducedTodayCount();
+    final remaining = (target - introducedToday).clamp(0, target).toInt();
+    final newAyahs = remaining > 0 ? await quran.nextAyahs(cursor, 1) : <Ayah>[];
+    return HifzPlan(revision: revision, newAyahs: newAyahs);
   }
 }

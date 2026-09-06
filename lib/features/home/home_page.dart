@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/repositories/quran_repository.dart';
 import '../hifz/hifz_session_page.dart';
+import '../hifz/hifz_test_page.dart';
+import '../quran/bookmarks_page.dart';
+import '../quran/reader_page.dart';
 import '../shell/app_controller.dart';
 
 class HomePage extends StatelessWidget {
@@ -10,123 +14,246 @@ class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<AppController>();
+    final stats = controller.stats;
 
     return SafeArea(
-      child: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Assalamu Alaikum',
-                    style: Theme.of(context).textTheme.titleMedium,
+      child: RefreshIndicator(
+        onRefresh: controller.refresh,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+          children: [
+            Text(
+              'Assalamu Alaikum',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Read. Memorize. Revise. Retain.',
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineMedium
+                  ?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 20),
+            _TodayCard(
+              due: stats.due,
+              target: controller.dailyTarget,
+              retained: stats.retained,
+            ),
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const HifzSessionPage(),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Your Qur’an journey',
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                ],
+                );
+                if (context.mounted) {
+                  await context.read<AppController>().refresh();
+                }
+              },
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: const Text('Start today’s Hifz'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
               ),
             ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'TODAY’S HIFZ',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.2,
+            const SizedBox(height: 22),
+            Text(
+              'Quick actions',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 1.25,
+              children: [
+                _ActionCard(
+                  icon: Icons.menu_book_rounded,
+                  title: controller.lastRead == null
+                      ? 'Start reading'
+                      : 'Continue reading',
+                  subtitle: controller.lastRead == null
+                      ? 'Open from Al-Fatihah'
+                      : 'Ayah ${controller.lastRead!.surahId}:${controller.lastRead!.ayahNumber}',
+                  onTap: () async {
+                    final quran = context.read<QuranRepository>();
+                    final start = controller.lastRead ?? await quran.ayah(1);
+                    if (start != null && context.mounted) {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ReaderPage(startAyahId: start.id),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Continue where you stopped',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${controller.memorized} ayahs in your learning record',
-                      ),
-                      const SizedBox(height: 18),
-                      FilledButton.icon(
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const HifzSessionPage(),
-                          ),
-                        ),
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('Continue Hifz'),
-                      ),
-                    ],
+                      );
+                      if (context.mounted) {
+                        await context.read<AppController>().refresh();
+                      }
+                    }
+                  },
+                ),
+                _ActionCard(
+                  icon: Icons.psychology_alt_outlined,
+                  title: 'Test recall',
+                  subtitle: 'Practice without seeing the text',
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const HifzTestPage()),
+                    );
+                    if (context.mounted) {
+                      await context.read<AppController>().refresh();
+                    }
+                  },
+                ),
+                _ActionCard(
+                  icon: Icons.bookmarks_outlined,
+                  title: 'Bookmarks',
+                  subtitle: 'Return to saved ayahs',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const BookmarksPage()),
                   ),
                 ),
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _stat(
+                _ActionCard(
+                  icon: Icons.repeat_rounded,
+                  title: 'Revision due',
+                  subtitle: '${stats.due} ayahs waiting',
+                  onTap: () async {
+                    await Navigator.push(
                       context,
-                      '📖',
-                      'Read',
-                      'Continue reading',
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _stat(
-                      context,
-                      '🔄',
-                      'Review',
-                      'Due revision',
-                    ),
-                  ),
-                ],
-              ),
+                      MaterialPageRoute(
+                        builder: (_) => const HifzSessionPage(),
+                      ),
+                    );
+                    if (context.mounted) {
+                      await context.read<AppController>().refresh();
+                    }
+                  },
+                ),
+              ],
             ),
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: 30)),
-        ],
+          ],
+        ),
       ),
     );
   }
+}
 
-  Widget _stat(
-    BuildContext context,
-    String emoji,
-    String title,
-    String subtitle,
-  ) {
+class _TodayCard extends StatelessWidget {
+  final int due;
+  final int target;
+  final int retained;
+
+  const _TodayCard({
+    required this.due,
+    required this.target,
+    required this.retained,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 24)),
-            const SizedBox(height: 8),
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              'TODAY’S JOURNEY',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(child: _Metric(value: '$due', label: 'Revision')),
+                Expanded(child: _Metric(value: '$target', label: 'New ayahs')),
+                Expanded(child: _Metric(value: '$retained', label: 'Retained')),
+              ],
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Metric extends StatelessWidget {
+  final String value;
+  final String label;
+
+  const _Metric({required this.value, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: Theme.of(context)
+              .textTheme
+              .headlineSmall
+              ?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+class _ActionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _ActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon),
+              const Spacer(),
+              Text(
+                title,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,26 +1,49 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
+  static const _seed = Color(0xFF176B57);
+
   static ThemeData light() {
-    return ThemeData(
-      useMaterial3: true,
+    final scheme = ColorScheme.fromSeed(
+      seedColor: _seed,
       brightness: Brightness.light,
-      scaffoldBackgroundColor: const Color(0xFFF7F6F1),
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1D6B52),
-        brightness: Brightness.light,
-      ),
-      fontFamily: 'sans',
+      surface: const Color(0xFFFCFBF7),
+    );
+    return _base(scheme).copyWith(
+      scaffoldBackgroundColor: const Color(0xFFF5F4EE),
     );
   }
 
   static ThemeData dark() {
+    return _base(
+      ColorScheme.fromSeed(
+        seedColor: const Color(0xFF63C6A5),
+        brightness: Brightness.dark,
+      ),
+    );
+  }
+
+  static ThemeData _base(ColorScheme scheme) {
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF5CC49A),
-        brightness: Brightness.dark,
+      colorScheme: scheme,
+      cardTheme: CardThemeData(
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+        ),
+      ),
+      navigationBarTheme: const NavigationBarThemeData(
+        height: 68,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide.none,
+        ),
       ),
     );
   }

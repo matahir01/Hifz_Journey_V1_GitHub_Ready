@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../data/models/ayah.dart';
 import '../../data/models/surah.dart';
 import '../../data/repositories/quran_repository.dart';
+import '../shell/app_controller.dart';
+import 'reader_page.dart';
 
 class SurahPage extends StatefulWidget {
   final Surah surah;
@@ -16,11 +18,43 @@ class SurahPage extends StatefulWidget {
 
 class _SurahPageState extends State<SurahPage> {
   late Future<List<Ayah>> ayahs;
+  Set<int> bookmarks = {};
 
   @override
   void initState() {
     super.initState();
     ayahs = context.read<QuranRepository>().ayahsForSurah(widget.surah.id);
+    _loadBookmarks();
+  }
+
+  Future<void> _loadBookmarks() async {
+    final ids = await context
+        .read<QuranRepository>()
+        .bookmarkedIdsForSurah(widget.surah.id);
+    if (mounted) setState(() => bookmarks = ids);
+  }
+
+  Future<void> _toggleBookmark(Ayah ayah) async {
+    final next = !bookmarks.contains(ayah.id);
+    await context.read<QuranRepository>().setBookmark(ayah.id, next);
+    if (!mounted) return;
+    setState(() {
+      if (next) {
+        bookmarks.add(ayah.id);
+      } else {
+        bookmarks.remove(ayah.id);
+      }
+    });
+  }
+
+  Future<void> _openReader(Ayah ayah) async {
+    await context.read<QuranRepository>().saveReadingProgress(ayah);
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ReaderPage(startAyahId: ayah.id)),
+    );
+    if (mounted) await context.read<AppController>().refresh();
   }
 
   @override
@@ -33,59 +67,53 @@ class _SurahPageState extends State<SurahPage> {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-
-          final ayahs = snapshot.data!;
+          final values = snapshot.data!;
           return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: ayahs.length,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+            itemCount: values.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
-              final ayah = ayahs[index];
-              return Container(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  color: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest
-                      .withValues(alpha: 0.35),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
+              final ayah = values[index];
+              final bookmarked = bookmarks.contains(ayah.id);
+              return Card(
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => _openReader(ayah),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        CircleAvatar(
-                          radius: 16,
-                          child: Text(
-                            '${ayah.ayahNumber}',
-                            style: const TextStyle(fontSize: 11),
-                          ),
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 17,
+                              child: Text('${ayah.ayahNumber}'),
+                            ),
+                            const Spacer(),
+                            Text('Juz ${ayah.juz} • Page ${ayah.page}'),
+                            IconButton(
+                              tooltip: bookmarked ? 'Remove bookmark' : 'Bookmark',
+                              onPressed: () => _toggleBookmark(ayah),
+                              icon: Icon(
+                                bookmarked ? Icons.bookmark : Icons.bookmark_border,
+                              ),
+                            ),
+                          ],
                         ),
-                        const Spacer(),
-                        IconButton(
-                          onPressed: () {},
-                          icon: const Icon(Icons.bookmark_border),
+                        const SizedBox(height: 8),
+                        Text(
+                          ayah.textUthmani,
+                          textAlign: TextAlign.right,
+                          textDirection: TextDirection.rtl,
+                          style: const TextStyle(fontSize: 29, height: 1.9),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      ayah.textUthmani,
-                      textAlign: TextAlign.right,
-                      textDirection: TextDirection.rtl,
-                      style: const TextStyle(fontSize: 29, height: 1.9),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Page ${ayah.page} • Juz ${ayah.juz}',
-                      textAlign: TextAlign.left,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+                  ),
                 ),
               );
             },
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
           );
         },
       ),

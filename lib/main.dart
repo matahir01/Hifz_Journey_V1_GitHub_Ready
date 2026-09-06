@@ -3,12 +3,13 @@ import 'package:provider/provider.dart';
 
 import 'core/database/app_database.dart';
 import 'core/notifications/notification_service.dart';
+import 'core/settings/settings_service.dart';
 import 'core/theme/app_theme.dart';
 import 'data/repositories/hifz_repository.dart';
 import 'data/repositories/quran_repository.dart';
 import 'features/home/home_page.dart';
 import 'features/progress/progress_page.dart';
-import 'features/quran/surah_list_page.dart';
+import 'features/quran/quran_hub_page.dart';
 import 'features/settings/settings_page.dart';
 import 'features/shell/app_controller.dart';
 
@@ -16,21 +17,27 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final database = AppDatabase.instance;
+  final quran = QuranRepository(database);
   final hifz = HifzRepository(database);
-  final controller = AppController(hifz);
-
-  await controller.load();
-
   final notifications = NotificationService();
   await notifications.init();
 
+  final controller = AppController(
+    hifz: hifz,
+    quran: quran,
+    settingsService: SettingsService(),
+    notifications: notifications,
+  );
+  await controller.load();
+
   runApp(
-    Provider.value(
-      value: QuranRepository(database),
-      child: ChangeNotifierProvider.value(
-        value: controller,
-        child: const HifzJourneyApp(),
-      ),
+    MultiProvider(
+      providers: [
+        Provider.value(value: quran),
+        Provider.value(value: hifz),
+        ChangeNotifierProvider.value(value: controller),
+      ],
+      child: const HifzJourneyApp(),
     ),
   );
 }
@@ -40,11 +47,13 @@ class HifzJourneyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final controller = context.watch<AppController>();
     return MaterialApp(
       title: 'Hifz Journey',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
+      themeMode: controller.themeMode,
       home: const Shell(),
     );
   }
@@ -60,9 +69,9 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   int index = 0;
 
-  final pages = const [
+  static const pages = [
     HomePage(),
-    SurahListPage(),
+    QuranHubPage(),
     ProgressPage(),
     SettingsPage(),
   ];
@@ -70,7 +79,7 @@ class _ShellState extends State<Shell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: pages[index],
+      body: IndexedStack(index: index, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (value) => setState(() => index = value),
