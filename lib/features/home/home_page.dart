@@ -15,26 +15,58 @@ class HomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<AppController>();
     final stats = controller.stats;
+    final scheme = Theme.of(context).colorScheme;
 
     return SafeArea(
       child: RefreshIndicator(
         onRefresh: controller.refresh,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
           children: [
-            Text(
-              'Assalamu Alaikum',
-              style: Theme.of(context).textTheme.titleMedium,
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: .45)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      'السلام عليكم ورحمة الله وبركاته',
+                      textDirection: TextDirection.rtl,
+                      textAlign: TextAlign.right,
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontFamily: 'Noto Naskh Arabic',
+                            fontFamilyFallback: const ['Noto Sans Arabic', 'serif'],
+                            height: 1.65,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.primary,
+                          ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Your Qur’an. Your Journey.',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          height: 1.08,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Read  ·  Memorize  ·  Revise  ·  Retain',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Read. Memorize. Revise. Retain.',
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineMedium
-                  ?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
             _TodayCard(
               due: stats.due,
               target: controller.dailyTarget,
@@ -45,9 +77,7 @@ class HomePage extends StatelessWidget {
               onPressed: () async {
                 await Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const HifzSessionPage(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const HifzSessionPage()),
                 );
                 if (context.mounted) {
                   await context.read<AppController>().refresh();
@@ -55,9 +85,7 @@ class HomePage extends StatelessWidget {
               },
               icon: const Icon(Icons.play_arrow_rounded),
               label: const Text('Start today’s Hifz'),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(52),
-              ),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
             ),
             const SizedBox(height: 22),
             Text(
@@ -78,9 +106,7 @@ class HomePage extends StatelessWidget {
               children: [
                 _ActionCard(
                   icon: Icons.menu_book_rounded,
-                  title: controller.lastRead == null
-                      ? 'Start reading'
-                      : 'Continue reading',
+                  title: controller.lastRead == null ? 'Start reading' : 'Continue reading',
                   subtitle: controller.lastRead == null
                       ? 'Open from Al-Fatihah'
                       : 'Ayah ${controller.lastRead!.surahId}:${controller.lastRead!.ayahNumber}',
@@ -107,9 +133,7 @@ class HomePage extends StatelessWidget {
                   onTap: () async {
                     await Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => const AiRecitationTestPage(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const AiRecitationTestPage()),
                     );
                     if (context.mounted) {
                       await context.read<AppController>().refresh();
@@ -132,9 +156,7 @@ class HomePage extends StatelessWidget {
                   onTap: () async {
                     await Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => const HifzSessionPage(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const HifzSessionPage()),
                     );
                     if (context.mounted) {
                       await context.read<AppController>().refresh();
@@ -155,11 +177,7 @@ class _TodayCard extends StatelessWidget {
   final int target;
   final int retained;
 
-  const _TodayCard({
-    required this.due,
-    required this.target,
-    required this.retained,
-  });
+  const _TodayCard({required this.due, required this.target, required this.retained});
 
   @override
   Widget build(BuildContext context) {
@@ -194,7 +212,6 @@ class _TodayCard extends StatelessWidget {
 class _Metric extends StatelessWidget {
   final String value;
   final String label;
-
   const _Metric({required this.value, required this.label});
 
   @override

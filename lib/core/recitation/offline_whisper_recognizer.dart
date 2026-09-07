@@ -61,6 +61,9 @@ class OfflineWhisperRecitationRecognizer {
         initialPrompt: initialPrompt,
         suppressNonSpeechTokens: true,
         keepModelLoaded: true,
+        gateRmsMin: 0.0010,
+        gateVoiceRatio: 1.8,
+        gateNoiseFloorCap: 0.008,
       );
     } catch (_) {
       await _recorder.cancel();
@@ -68,7 +71,9 @@ class OfflineWhisperRecitationRecognizer {
     }
 
     _partialSubscription = _session!.partials.listen((text) {
-      _latest = text.trim();
+      final next = text.trim();
+      if (next == _latest) return;
+      _latest = next;
       _states.add(
         RecitationRecognizerState(transcript: _latest, listening: true),
       );

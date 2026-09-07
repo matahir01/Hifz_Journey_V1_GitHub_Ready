@@ -127,7 +127,7 @@ class RecitationComparator {
       }
     }
 
-    final ordered = aligned.reversed.toList(growable: false);
+    aligned.reverse();
     final denominator = m == 0 ? 1 : m;
     final penalty = missing + substituted;
     final score = ((denominator - penalty) / denominator).clamp(0.0, 1.0);
@@ -137,7 +137,7 @@ class RecitationComparator {
       correctWords: correct,
       missingWords: missing,
       substitutedWords: substituted,
-      words: ordered,
+      words: aligned,
     );
   }
 

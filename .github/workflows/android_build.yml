@@ -34,17 +34,6 @@ jobs:
       - name: Show Flutter environment
         run: flutter --version
 
-      - name: Accept Android SDK licenses and install Whisper NDK
-        shell: bash
-        run: |
-          set -euo pipefail
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then
-            SDKMANAGER="$(command -v sdkmanager)"
-          fi
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;29.0.13113456"
-
       - name: Get dependencies
         run: flutter pub get
 
