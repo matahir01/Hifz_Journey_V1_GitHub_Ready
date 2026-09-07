@@ -32,7 +32,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onConfigure: (database) async {
         await database.execute('PRAGMA foreign_keys = ON');
       },
@@ -62,8 +62,11 @@ class AppDatabase {
       CREATE TABLE IF NOT EXISTS recitation_attempts(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ayah_id INTEGER NOT NULL,
-        transcript TEXT NOT NULL,
-        score REAL NOT NULL,
+        recognizer TEXT,
+        transcript TEXT,
+        score REAL NOT NULL DEFAULT 0,
+        grade TEXT,
+        issues TEXT,
         correct_words INTEGER NOT NULL DEFAULT 0,
         missing_words INTEGER NOT NULL DEFAULT 0,
         substituted_words INTEGER NOT NULL DEFAULT 0,
@@ -71,6 +74,12 @@ class AppDatabase {
         FOREIGN KEY(ayah_id) REFERENCES ayahs(id)
       )
     ''');
+    await _ensureColumn(database, 'recitation_attempts', 'recognizer', 'TEXT');
+    await _ensureColumn(database, 'recitation_attempts', 'grade', 'TEXT');
+    await _ensureColumn(database, 'recitation_attempts', 'issues', 'TEXT');
+    await _ensureColumn(database, 'recitation_attempts', 'correct_words', 'INTEGER NOT NULL DEFAULT 0');
+    await _ensureColumn(database, 'recitation_attempts', 'missing_words', 'INTEGER NOT NULL DEFAULT 0');
+    await _ensureColumn(database, 'recitation_attempts', 'substituted_words', 'INTEGER NOT NULL DEFAULT 0');
 
     await database.execute('''
       CREATE TABLE IF NOT EXISTS app_activity(
@@ -84,41 +93,12 @@ class AppDatabase {
       )
     ''');
 
-    await database.execute('''
-      CREATE TABLE IF NOT EXISTS recitation_attempts(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ayah_id INTEGER NOT NULL,
-        recognizer TEXT NOT NULL,
-        transcript TEXT,
-        score REAL NOT NULL,
-        grade TEXT NOT NULL,
-        issues TEXT,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(ayah_id) REFERENCES ayahs(id)
-      )
-    ''');
-    await database.execute(
-      'CREATE INDEX IF NOT EXISTS idx_recitation_attempts_ayah ON recitation_attempts(ayah_id, created_at)',
-    );
-
-    await database.execute(
-      'CREATE INDEX IF NOT EXISTS idx_ayahs_surah ON ayahs(surah_id, ayah_number)',
-    );
-    await database.execute(
-      'CREATE INDEX IF NOT EXISTS idx_ayahs_page ON ayahs(page, id)',
-    );
-    await database.execute(
-      'CREATE INDEX IF NOT EXISTS idx_ayahs_juz ON ayahs(juz, id)',
-    );
-    await database.execute(
-      'CREATE INDEX IF NOT EXISTS idx_hifz_due ON hifz_progress(next_review_at, strength)',
-    );
-    await database.execute(
-      'CREATE INDEX IF NOT EXISTS idx_activity_created ON app_activity(created_at)',
-    );
-    await database.execute(
-      'CREATE INDEX IF NOT EXISTS idx_recitation_attempts_ayah ON recitation_attempts(ayah_id, created_at)',
-    );
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_recitation_attempts_ayah ON recitation_attempts(ayah_id, created_at)');
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_ayahs_surah ON ayahs(surah_id, ayah_number)');
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_ayahs_page ON ayahs(page, id)');
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_ayahs_juz ON ayahs(juz, id)');
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_hifz_due ON hifz_progress(next_review_at, strength)');
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_activity_created ON app_activity(created_at)');
   }
 
   Future<void> _ensureColumn(
