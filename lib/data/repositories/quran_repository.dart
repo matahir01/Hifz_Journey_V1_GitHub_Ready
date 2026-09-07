@@ -17,23 +17,13 @@ class QuranRepository {
 
   Future<Surah?> surah(int id) async {
     final db = await database.db;
-    final rows = await db.query(
-      'surahs',
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
+    final rows = await db.query('surahs', where: 'id = ?', whereArgs: [id], limit: 1);
     return rows.isEmpty ? null : Surah.fromMap(rows.first);
   }
 
   Future<List<Ayah>> ayahsForSurah(int id) async {
     final db = await database.db;
-    final rows = await db.query(
-      'ayahs',
-      where: 'surah_id = ?',
-      whereArgs: [id],
-      orderBy: 'ayah_number',
-    );
+    final rows = await db.query('ayahs', where: 'surah_id = ?', whereArgs: [id], orderBy: 'ayah_number');
     return rows.map(Ayah.fromMap).toList();
   }
 
@@ -45,26 +35,38 @@ class QuranRepository {
 
   Future<Ayah?> ayah(int id) async {
     final db = await database.db;
+    final rows = await db.query('ayahs', where: 'id = ?', whereArgs: [id], limit: 1);
+    return rows.isEmpty ? null : Ayah.fromMap(rows.first);
+  }
+
+  Future<List<Ayah>> ayahsBetween(int startId, int endId) async {
+    final db = await database.db;
     final rows = await db.query(
       'ayahs',
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
+      where: 'id >= ? AND id <= ?',
+      whereArgs: [startId, endId],
+      orderBy: 'id',
     );
-    return rows.isEmpty ? null : Ayah.fromMap(rows.first);
+    return rows.map(Ayah.fromMap).toList();
+  }
+
+  Future<List<Ayah>> ayahsForPages(int startPage, int pageCount) async {
+    final db = await database.db;
+    final endPage = (startPage + pageCount - 1).clamp(1, 604).toInt();
+    final rows = await db.query(
+      'ayahs',
+      where: 'page >= ? AND page <= ?',
+      whereArgs: [startPage, endPage],
+      orderBy: 'id',
+    );
+    return rows.map(Ayah.fromMap).toList();
   }
 
   Future<List<Ayah>> nextAyahs(int? afterId, int count) async {
     final db = await database.db;
     final rows = afterId == null
         ? await db.query('ayahs', orderBy: 'id', limit: count)
-        : await db.query(
-            'ayahs',
-            where: 'id > ?',
-            whereArgs: [afterId],
-            orderBy: 'id',
-            limit: count,
-          );
+        : await db.query('ayahs', where: 'id > ?', whereArgs: [afterId], orderBy: 'id', limit: count);
     return rows.map(Ayah.fromMap).toList();
   }
 
@@ -126,13 +128,7 @@ class QuranRepository {
 
   Future<bool> isBookmarked(int ayahId) async {
     final db = await database.db;
-    final rows = await db.query(
-      'bookmarks',
-      columns: ['id'],
-      where: 'ayah_id = ? AND type = ?',
-      whereArgs: [ayahId, 'ayah'],
-      limit: 1,
-    );
+    final rows = await db.query('bookmarks', columns: ['id'], where: 'ayah_id = ? AND type = ?', whereArgs: [ayahId, 'ayah'], limit: 1);
     return rows.isNotEmpty;
   }
 
@@ -152,19 +148,11 @@ class QuranRepository {
     if (bookmarked) {
       await db.insert(
         'bookmarks',
-        {
-          'ayah_id': ayahId,
-          'type': 'ayah',
-          'created_at': DateTime.now().toIso8601String(),
-        },
+        {'ayah_id': ayahId, 'type': 'ayah', 'created_at': DateTime.now().toIso8601String()},
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
     } else {
-      await db.delete(
-        'bookmarks',
-        where: 'ayah_id = ? AND type = ?',
-        whereArgs: [ayahId, 'ayah'],
-      );
+      await db.delete('bookmarks', where: 'ayah_id = ? AND type = ?', whereArgs: [ayahId, 'ayah']);
     }
   }
 
@@ -182,36 +170,19 @@ class QuranRepository {
 
   Future<Ayah?> firstAyahOfJuz(int juz) async {
     final db = await database.db;
-    final rows = await db.query(
-      'ayahs',
-      where: 'juz = ?',
-      whereArgs: [juz],
-      orderBy: 'id',
-      limit: 1,
-    );
+    final rows = await db.query('ayahs', where: 'juz = ?', whereArgs: [juz], orderBy: 'id', limit: 1);
     return rows.isEmpty ? null : Ayah.fromMap(rows.first);
   }
 
   Future<Ayah?> firstAyahOfPage(int page) async {
     final db = await database.db;
-    final rows = await db.query(
-      'ayahs',
-      where: 'page = ?',
-      whereArgs: [page],
-      orderBy: 'id',
-      limit: 1,
-    );
+    final rows = await db.query('ayahs', where: 'page = ?', whereArgs: [page], orderBy: 'id', limit: 1);
     return rows.isEmpty ? null : Ayah.fromMap(rows.first);
   }
 
   Future<List<Ayah>> ayahsForPage(int page) async {
     final db = await database.db;
-    final rows = await db.query(
-      'ayahs',
-      where: 'page = ?',
-      whereArgs: [page],
-      orderBy: 'id',
-    );
+    final rows = await db.query('ayahs', where: 'page = ?', whereArgs: [page], orderBy: 'id');
     return rows.map(Ayah.fromMap).toList();
   }
 
