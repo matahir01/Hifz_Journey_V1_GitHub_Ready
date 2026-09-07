@@ -13,16 +13,24 @@ import '../shell/app_controller.dart';
 
 class AiRecitationTestPage extends StatefulWidget {
   final int? ayahId;
+  final String? title;
+  final String? cueText;
+  final String? expectedTextOverride;
 
-  const AiRecitationTestPage({super.key, this.ayahId});
+  const AiRecitationTestPage({
+    super.key,
+    this.ayahId,
+    this.title,
+    this.cueText,
+    this.expectedTextOverride,
+  });
 
   @override
   State<AiRecitationTestPage> createState() => _AiRecitationTestPageState();
 }
 
 class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
-  final OfflineWhisperRecitationRecognizer recognizer =
-      OfflineWhisperRecitationRecognizer();
+  final OfflineWhisperRecitationRecognizer recognizer = OfflineWhisperRecitationRecognizer();
   final RecitationComparator comparator = const RecitationComparator();
 
   StreamSubscription<RecitationRecognizerState>? subscription;
@@ -41,6 +49,8 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
   double? modelProgress;
   String? modelError;
 
+  String get expectedText => widget.expectedTextOverride ?? ayah?.textUthmani ?? '';
+
   @override
   void initState() {
     super.initState();
@@ -49,7 +59,6 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
     _loadModelStatus();
     _loadAyah();
   }
-
 
   Future<void> _loadModelStatus() async {
     final status = await recognizer.modelManager.status();
@@ -116,7 +125,7 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
       listening = state.listening;
       if (transcript.isNotEmpty) {
         liveComparison = comparator.compare(
-          expectedText: ayah!.textUthmani,
+          expectedText: expectedText,
           transcript: transcript,
           live: state.listening,
         );
@@ -133,16 +142,14 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
         liveComparison = null;
         transcript = '';
         if (!modelInstalled) {
-          throw StateError(
-            'Download the Qur’an recitation model before starting the test.',
-          );
+          throw StateError('Download the Qur’an recitation model before starting the test.');
         }
         await recognizer.start();
       } else {
         final text = await recognizer.stop();
         if (!mounted) return;
         final comparison = comparator.compare(
-          expectedText: ayah!.textUthmani,
+          expectedText: expectedText,
           transcript: text,
         );
         setState(() => finalComparison = comparison);
@@ -192,7 +199,7 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI recitation test'),
+        title: Text(widget.title ?? 'AI recitation test'),
         actions: [
           IconButton(
             tooltip: textHidden ? 'Show ayah' : 'Hide ayah',
@@ -208,6 +215,27 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
               : ListView(
                   padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
                   children: [
+                    if (widget.cueText != null && widget.cueText!.trim().isNotEmpty) ...[
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text('Cue', style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 8),
+                              Text(
+                                widget.cueText!,
+                                textAlign: TextAlign.right,
+                                textDirection: TextDirection.rtl,
+                                style: const TextStyle(fontSize: 26, height: 1.8),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(18),
@@ -216,10 +244,7 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
                           children: [
                             Text(
                               'Recite ${ayah!.surahId}:${ayah!.ayahNumber}',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.w800),
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
                             ),
                             const SizedBox(height: 12),
                             AnimatedSwitcher(
@@ -228,13 +253,11 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
                                   ? const SizedBox(
                                       key: ValueKey('hidden'),
                                       height: 126,
-                                      child: Center(
-                                        child: Icon(Icons.visibility_off_outlined, size: 54),
-                                      ),
+                                      child: Center(child: Icon(Icons.visibility_off_outlined, size: 54)),
                                     )
                                   : Text(
-                                      ayah!.textUthmani,
-                                      key: ValueKey(ayah!.id),
+                                      expectedText,
+                                      key: ValueKey('expected'),
                                       textAlign: TextAlign.right,
                                       textDirection: TextDirection.rtl,
                                       style: const TextStyle(fontSize: 29, height: 1.9),
@@ -252,12 +275,7 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
                     ),
                     if (error != null) ...[
                       const SizedBox(height: 10),
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Text(error!, style: const TextStyle(color: Colors.red)),
-                        ),
-                      ),
+                      Card(child: Padding(padding: const EdgeInsets.all(14), child: Text(error!, style: const TextStyle(color: Colors.red)))),
                     ],
                     const SizedBox(height: 14),
                     _ModelCard(
@@ -270,14 +288,10 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
                     ),
                     const SizedBox(height: 12),
                     FilledButton.icon(
-                      onPressed: modelInstalled && !modelDownloading
-                          ? _toggleListening
-                          : null,
+                      onPressed: modelInstalled && !modelDownloading ? _toggleListening : null,
                       icon: Icon(listening ? Icons.stop_rounded : Icons.mic_rounded),
                       label: Text(listening ? 'Finish recitation' : 'Start reciting'),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(54),
-                      ),
+                      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
                     ),
                     const SizedBox(height: 8),
                     const Text(
@@ -300,7 +314,6 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
     );
   }
 }
-
 
 class _ModelCard extends StatelessWidget {
   final bool installed;
@@ -330,57 +343,35 @@ class _ModelCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(
-                  installed
-                      ? Icons.offline_pin_rounded
-                      : Icons.psychology_alt_outlined,
-                ),
+                Icon(installed ? Icons.offline_pin_rounded : Icons.psychology_alt_outlined),
                 const SizedBox(width: 9),
                 const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Qur’an recitation model',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
+                      Text('Qur’an recitation model', style: TextStyle(fontWeight: FontWeight.w800)),
                       Text('Tarteel Whisper · on-device'),
                     ],
                   ),
                 ),
-                if (installed)
-                  const Chip(label: Text('Ready')),
+                if (installed) const Chip(label: Text('Ready')),
               ],
             ),
             if (downloading) ...[
               const SizedBox(height: 12),
               LinearProgressIndicator(value: progress),
               const SizedBox(height: 6),
-              Text(
-                percent == null ? 'Downloading model…' : 'Downloading… $percent%',
-                textAlign: TextAlign.center,
-              ),
+              Text(percent == null ? 'Downloading model…' : 'Downloading… $percent%', textAlign: TextAlign.center),
             ] else if (!installed) ...[
               const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: onDownload,
-                icon: const Icon(Icons.download_rounded),
-                label: const Text('Download model (~77 MB)'),
-              ),
+              FilledButton.icon(onPressed: onDownload, icon: const Icon(Icons.download_rounded), label: const Text('Download model (~77 MB)')),
             ] else ...[
               const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Remove downloaded model'),
-              ),
+              TextButton.icon(onPressed: onDelete, icon: const Icon(Icons.delete_outline), label: const Text('Remove downloaded model')),
             ],
             if (error != null) ...[
               const SizedBox(height: 8),
-              Text(
-                error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
+              Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
             ],
           ],
         ),
@@ -394,11 +385,7 @@ class _StatusCard extends StatelessWidget {
   final String transcript;
   final RecitationComparison? comparison;
 
-  const _StatusCard({
-    required this.listening,
-    required this.transcript,
-    required this.comparison,
-  });
+  const _StatusCard({required this.listening, required this.transcript, required this.comparison});
 
   @override
   Widget build(BuildContext context) {
@@ -408,16 +395,11 @@ class _StatusCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Icon(listening ? Icons.graphic_eq_rounded : Icons.mic_none_rounded),
-                const SizedBox(width: 8),
-                Text(
-                  listening ? 'Listening…' : 'Ready',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ],
-            ),
+            Row(children: [
+              Icon(listening ? Icons.graphic_eq_rounded : Icons.mic_none_rounded),
+              const SizedBox(width: 8),
+              Text(listening ? 'Listening…' : 'Ready', style: const TextStyle(fontWeight: FontWeight.w800)),
+            ]),
             const SizedBox(height: 10),
             Text(
               transcript.isEmpty ? 'Your recognized recitation will appear here.' : transcript,
@@ -438,7 +420,6 @@ class _StatusCard extends StatelessWidget {
 
 class _WordFlow extends StatelessWidget {
   final List<WordAssessment> words;
-
   const _WordFlow({required this.words});
 
   @override
@@ -448,7 +429,7 @@ class _WordFlow extends StatelessWidget {
       textDirection: TextDirection.rtl,
       spacing: 7,
       runSpacing: 7,
-      children: words.map((word) {
+      children: words.map<Widget>((word) {
         final background = switch (word.state) {
           WordAssessmentState.correct => scheme.primaryContainer,
           WordAssessmentState.substituted => scheme.errorContainer,
@@ -467,12 +448,7 @@ class _WordFlow extends StatelessWidget {
           label: Text(word.expected, textDirection: TextDirection.rtl),
         );
         final heard = word.heard;
-        return heard == null
-            ? chip
-            : Tooltip(
-                message: 'Heard: $heard',
-                child: chip,
-              );
+        return heard == null ? chip : Tooltip(message: 'Heard: $heard', child: chip);
       }).toList(),
     );
   }
@@ -480,7 +456,6 @@ class _WordFlow extends StatelessWidget {
 
 class _ResultCard extends StatelessWidget {
   final RecitationComparison comparison;
-
   const _ResultCard({required this.comparison});
 
   @override
@@ -495,13 +470,11 @@ class _ResultCard extends StatelessWidget {
             Text('$percent%', style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w900)),
             Text(label, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(child: _Metric(value: comparison.correctWords, label: 'Correct')),
-                Expanded(child: _Metric(value: comparison.substitutedWords, label: 'Different')),
-                Expanded(child: _Metric(value: comparison.missingWords, label: 'Missed')),
-              ],
-            ),
+            Row(children: [
+              Expanded(child: _Metric(value: comparison.correctWords, label: 'Correct')),
+              Expanded(child: _Metric(value: comparison.substitutedWords, label: 'Different')),
+              Expanded(child: _Metric(value: comparison.missingWords, label: 'Missed')),
+            ]),
             const SizedBox(height: 12),
             const Text(
               'This assesses memorization/text accuracy. It is not a qualified tajwid or makhraj judgement.',
@@ -517,7 +490,6 @@ class _ResultCard extends StatelessWidget {
 class _Metric extends StatelessWidget {
   final int value;
   final String label;
-
   const _Metric({required this.value, required this.label});
 
   @override
