@@ -299,11 +299,16 @@ class _AssessmentCard extends StatelessWidget {
                   RecitationTokenStatus.substituted => scheme.tertiaryContainer,
                   RecitationTokenStatus.missed => scheme.errorContainer,
                 };
-                return Chip(
+                final chip = Chip(
                   backgroundColor: background,
                   label: Text(token.expected, textDirection: TextDirection.rtl),
-                  tooltip: token.spoken == null ? 'Missed' : token.status == RecitationTokenStatus.substituted ? 'Heard: ${token.spoken}' : 'Correct',
                 );
+                final tooltip = token.spoken == null
+                    ? 'Missed'
+                    : token.status == RecitationTokenStatus.substituted
+                        ? 'Heard: ${token.spoken}'
+                        : 'Correct';
+                return Tooltip(message: tooltip, child: chip);
               }).toList(),
             ),
             const SizedBox(height: 10),

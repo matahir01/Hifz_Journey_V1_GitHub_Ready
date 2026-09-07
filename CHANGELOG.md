@@ -1,3 +1,9 @@
+## 3.0.0-alpha.5+12
+
+- Fixed Flutter 3.47 compatibility in recitation result chips by replacing unsupported `Chip.tooltip` with `Tooltip` wrappers.
+- Fixed recitation comparator ordering by using `List.reversed` instead of the nonexistent `List.reverse()` method.
+- Keeps the Tarteel Qur'an recognizer and NDK 29 GitHub build setup from alpha.4.
+
 # Changelog
 
 ## 3.0.0-alpha.3+10
