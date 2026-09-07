@@ -24,47 +24,11 @@ class SettingsPage extends StatelessWidget {
       ])),
       const SizedBox(height: 14),
       Card(child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Icon(Icons.record_voice_over_outlined),
-              const SizedBox(width: 16),
-              const Expanded(
-                child: Text(
-                  'Preferred reciter',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                flex: 2,
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: controller.reciterId,
-                    isExpanded: true,
-                    items: AudioReciters.all
-                        .map(
-                          (r) => DropdownMenuItem(
-                            value: r.id,
-                            child: Text(
-                              r.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) controller.setReciter(v);
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        Padding(padding: const EdgeInsets.fromLTRB(16, 14, 16, 12), child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          const Icon(Icons.record_voice_over_outlined), const SizedBox(width: 16),
+          const Expanded(child: Text('Preferred reciter', style: TextStyle(fontWeight: FontWeight.w600))), const SizedBox(width: 12),
+          Flexible(flex: 2, child: DropdownButtonHideUnderline(child: DropdownButton<String>(value: controller.reciterId, isExpanded: true, items: AudioReciters.all.map((r) => DropdownMenuItem(value: r.id, child: Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis))).toList(), onChanged: (v) { if (v != null) controller.setReciter(v); }))),
+        ])),
         const Divider(height: 1),
         ListTile(leading: const Icon(Icons.headphones_outlined), title: const Text('Reciter & audio'), subtitle: const Text('Stream verse-by-verse or download Surahs for offline playback.'), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AudioLibraryPage()))),
       ])),
@@ -80,8 +44,12 @@ class SettingsPage extends StatelessWidget {
       const Card(child: ListTile(leading: Icon(Icons.verified_outlined), title: Text('Qur’an text attribution'), subtitle: Text('Arabic Qur’an text is sourced from the Tanzil Project and must remain verbatim with required attribution.'))),
       const SizedBox(height: 14),
       Card(child: ListTile(leading: const Icon(Icons.restart_alt), title: const Text('Reset Hifz progress'), subtitle: const Text('Bookmarks and reading position are kept.'), onTap: () => _confirmReset(context))),
-      const SizedBox(height: 16),
-      Center(child: Text('Hifz Journey 2.1.2 • Offline-first + streaming audio', style: Theme.of(context).textTheme.bodySmall)),
+      const SizedBox(height: 20),
+      Center(child: Column(children: [
+        Text('Hifz Journey', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 2),
+        Text('Version 3.0.0', style: Theme.of(context).textTheme.bodySmall),
+      ])),
     ]));
   }
 
