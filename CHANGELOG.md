@@ -9,3 +9,7 @@
 - Removed expected-ayah prompt injection from testing to avoid biasing Whisper toward the answer.
 - Updated Recitation Coach UI and documentation for the Tarteel model.
 - Kept the V2.1.2 audio synchronization and responsive Settings fixes.
+
+## 3.0.0-alpha.4+11
+- GitHub Actions now accepts Android SDK licenses and installs NDK 29.0.13113456 required by whisper_ggml.
+- Android app pins the same NDK version so app/plugin native builds use a consistent toolchain.

@@ -23,3 +23,7 @@ Online recitation audio uses Al Quran Cloud / Islamic Network ayah-level audio. 
 The included GitHub Actions workflow builds the Android release APK. Push this repository to GitHub and open **Actions** to obtain the generated APK artifact.
 
 See `V3_SCOPE.md` for the V3 roadmap and `V2_AUDIO_ARCHITECTURE.md` for the audio design.
+
+
+### GitHub Android native toolchain
+The APK workflow installs and accepts the license for Android NDK 29.0.13113456, which is required by the on-device whisper_ggml/whisper.cpp recognizer.
