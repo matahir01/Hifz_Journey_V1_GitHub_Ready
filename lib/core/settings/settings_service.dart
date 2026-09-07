@@ -3,8 +3,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../audio/audio_reciter.dart';
 
+enum HifzTargetUnit { ayahs, pages, thumun, quarterHizb, halfHizb, hizb }
+
 class SettingsSnapshot {
   final int dailyTarget;
+  final HifzTargetUnit hifzTargetUnit;
+  final int hifzTargetAmount;
   final bool remindersEnabled;
   final int reminderHour;
   final int reminderMinute;
@@ -15,6 +19,8 @@ class SettingsSnapshot {
 
   const SettingsSnapshot({
     required this.dailyTarget,
+    required this.hifzTargetUnit,
+    required this.hifzTargetAmount,
     required this.remindersEnabled,
     required this.reminderHour,
     required this.reminderMinute,
@@ -27,6 +33,8 @@ class SettingsSnapshot {
 
 class SettingsService {
   static const _dailyTargetKey = 'daily_target';
+  static const _hifzTargetUnitKey = 'hifz_target_unit';
+  static const _hifzTargetAmountKey = 'hifz_target_amount';
   static const _remindersKey = 'reminders_enabled';
   static const _reminderHourKey = 'reminder_hour';
   static const _reminderMinuteKey = 'reminder_minute';
@@ -38,12 +46,14 @@ class SettingsService {
   Future<SettingsSnapshot> load() async {
     final prefs = await SharedPreferences.getInstance();
     final modeName = prefs.getString(_themeModeKey) ?? ThemeMode.system.name;
-    final themeMode = ThemeMode.values.firstWhere(
-      (mode) => mode.name == modeName,
-      orElse: () => ThemeMode.system,
-    );
+    final themeMode = ThemeMode.values.firstWhere((mode) => mode.name == modeName, orElse: () => ThemeMode.system);
+    final unitName = prefs.getString(_hifzTargetUnitKey) ?? HifzTargetUnit.ayahs.name;
+    final targetUnit = HifzTargetUnit.values.firstWhere((u) => u.name == unitName, orElse: () => HifzTargetUnit.ayahs);
+    final legacyTarget = prefs.getInt(_dailyTargetKey) ?? 3;
     return SettingsSnapshot(
-      dailyTarget: prefs.getInt(_dailyTargetKey) ?? 3,
+      dailyTarget: legacyTarget,
+      hifzTargetUnit: targetUnit,
+      hifzTargetAmount: prefs.getInt(_hifzTargetAmountKey) ?? legacyTarget,
       remindersEnabled: prefs.getBool(_remindersKey) ?? false,
       reminderHour: prefs.getInt(_reminderHourKey) ?? 7,
       reminderMinute: prefs.getInt(_reminderMinuteKey) ?? 0,
@@ -54,11 +64,16 @@ class SettingsService {
     );
   }
 
-  Future<void> setDailyTarget(int value) async =>
-      (await SharedPreferences.getInstance()).setInt(_dailyTargetKey, value);
+  Future<void> setDailyTarget(int value) async => (await SharedPreferences.getInstance()).setInt(_dailyTargetKey, value);
 
-  Future<void> setRemindersEnabled(bool value) async =>
-      (await SharedPreferences.getInstance()).setBool(_remindersKey, value);
+  Future<void> setHifzTarget(HifzTargetUnit unit, int amount) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_hifzTargetUnitKey, unit.name);
+    await prefs.setInt(_hifzTargetAmountKey, amount);
+    if (unit == HifzTargetUnit.ayahs) await prefs.setInt(_dailyTargetKey, amount);
+  }
+
+  Future<void> setRemindersEnabled(bool value) async => (await SharedPreferences.getInstance()).setBool(_remindersKey, value);
 
   Future<void> setReminderTime(int hour, int minute) async {
     final prefs = await SharedPreferences.getInstance();
@@ -66,20 +81,14 @@ class SettingsService {
     await prefs.setInt(_reminderMinuteKey, minute);
   }
 
-  Future<void> setThemeMode(ThemeMode mode) async =>
-      (await SharedPreferences.getInstance()).setString(_themeModeKey, mode.name);
+  Future<void> setThemeMode(ThemeMode mode) async => (await SharedPreferences.getInstance()).setString(_themeModeKey, mode.name);
+  Future<void> setReciterId(String value) async => (await SharedPreferences.getInstance()).setString(_reciterIdKey, value);
 
-  Future<void> setReciterId(String value) async =>
-      (await SharedPreferences.getInstance()).setString(_reciterIdKey, value);
-
-  Future<void> completeOnboarding({
-    required int dailyTarget,
-    required int startAyahId,
-    required int hour,
-    required int minute,
-  }) async {
+  Future<void> completeOnboarding({required int dailyTarget, required int startAyahId, required int hour, required int minute}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_dailyTargetKey, dailyTarget);
+    await prefs.setString(_hifzTargetUnitKey, HifzTargetUnit.ayahs.name);
+    await prefs.setInt(_hifzTargetAmountKey, dailyTarget);
     await prefs.setInt(_startAyahKey, startAyahId);
     await prefs.setInt(_reminderHourKey, hour);
     await prefs.setInt(_reminderMinuteKey, minute);
