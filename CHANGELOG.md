@@ -1,16 +1,15 @@
-## 3.0.0+16
-- Fixed Flutter 3.47 compilation of recitation word chips by wrapping chip hints with `Tooltip`.
-- Fixed recitation alignment ordering by using `List.reversed` instead of a non-existent `List.reverse()` method.
-- Retains the Android NDK 29 GitHub Actions setup for `whisper_ggml`.
-
 # Changelog
 
-## 3.0.0-alpha.3+10
+## 3.0.0+20 — Consolidated V3
+- Redesigned the 604-page text Mushaf into a dedicated reading experience with paper styling, ornamental Surah headers, focus mode, adjustable Arabic text, page slider/jump and swipe navigation.
+- Added Mushaf ayah actions: open Ayah View, AI recitation test and bookmark.
+- Redesigned Ayah View with memorization hide/reveal, larger Arabic typography, Mushaf shortcut, offline audio and direct AI testing.
+- Added the Memorization Test Centre with random, continue-the-recitation, start-from-middle, weak-only, due and specific-reference modes.
+- Wired weak ayahs directly into the AI recitation coach.
+- Hardened recitation_attempts schema migration so both legacy device-recognition and Tarteel AI results can coexist.
+- Retained Tarteel Whisper on-device recognition, Al Quran Cloud audio, retention engine, analytics, reminders and backup/restore.
+- Retained Android NDK 29 CI installation and SDK licence handling.
+- Product branding cleaned to Hifz Journey Version 3.0.0.
 
-- Replaced the generic Whisper Base download with the Qur'an-specialized Tarteel Whisper GGML q8_0 model.
-- Added one-time ~77 MB model download manager with progress, private storage, validation, retry/error state, and model removal.
-- Live recitation now uses `WhisperController.transcribeLive(modelPath: ...)` with the downloaded custom GGML model.
-- Recognition remains fully on-device after the model download; no Hifz Journey speech server/API key is required.
-- Removed expected-ayah prompt injection from testing to avoid biasing Whisper toward the answer.
-- Updated Recitation Coach UI and documentation for the Tarteel model.
-- Kept the V2.1.2 audio synchronization and responsive Settings fixes.
+## 3.0.0+16
+- Fixed Flutter 3.47 Chip tooltip incompatibility and reversed-list compilation issue.
