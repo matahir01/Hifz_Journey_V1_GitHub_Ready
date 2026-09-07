@@ -1,3 +1,8 @@
+## 3.0.0+16
+- Fixed Flutter 3.47 compilation of recitation word chips by wrapping chip hints with `Tooltip`.
+- Fixed recitation alignment ordering by using `List.reversed` instead of a non-existent `List.reverse()` method.
+- Retains the Android NDK 29 GitHub Actions setup for `whisper_ggml`.
+
 # Changelog
 
 ## 3.0.0-alpha.3+10

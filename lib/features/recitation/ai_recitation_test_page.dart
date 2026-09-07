@@ -461,12 +461,18 @@ class _WordFlow extends StatelessWidget {
           WordAssessmentState.missing => Icons.remove,
           WordAssessmentState.pending => Icons.more_horiz,
         };
-        return Chip(
+        final chip = Chip(
           avatar: Icon(icon, size: 15),
           backgroundColor: background,
           label: Text(word.expected, textDirection: TextDirection.rtl),
-          tooltip: word.heard == null ? null : 'Heard: ${word.heard}',
         );
+        final heard = word.heard;
+        return heard == null
+            ? chip
+            : Tooltip(
+                message: 'Heard: $heard',
+                child: chip,
+              );
       }).toList(),
     );
   }
