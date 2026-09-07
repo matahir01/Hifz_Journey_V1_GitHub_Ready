@@ -18,7 +18,7 @@ class HifzEngine {
 
   HifzEngine(this.quran, this.hifz);
 
-  Future<HifzPlan> today({int target = 3}) async {
+  Future<HifzPlan> today({int target = 3, int startAyahId = 1}) async {
     final due = await hifz.dueIds(limit: 20);
     final revision = <Ayah>[];
     for (final id in due) {
@@ -26,10 +26,10 @@ class HifzEngine {
       if (ayah != null) revision.add(ayah);
     }
 
-    final cursor = await hifz.lastIntroducedAyahId();
+    final cursor = await hifz.lastIntroducedAyahId() ?? (startAyahId - 1);
     final introducedToday = await hifz.introducedTodayCount();
     final remaining = (target - introducedToday).clamp(0, target).toInt();
-    final newAyahs = remaining > 0 ? await quran.nextAyahs(cursor, 1) : <Ayah>[];
+    final newAyahs = remaining > 0 ? await quran.nextAyahs(cursor, remaining) : <Ayah>[];
     return HifzPlan(revision: revision, newAyahs: newAyahs);
   }
 }

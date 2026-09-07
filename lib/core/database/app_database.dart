@@ -32,7 +32,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 5,
       onConfigure: (database) async {
         await database.execute('PRAGMA foreign_keys = ON');
       },
@@ -47,12 +47,29 @@ class AppDatabase {
     await database.execute('''
       CREATE TABLE IF NOT EXISTS audio_metadata(
         ayah_id INTEGER PRIMARY KEY,
-        reciter TEXT,
-        local_path TEXT,
-        downloaded_at TEXT,
+        reciter TEXT NOT NULL DEFAULT 'Local audio',
+        local_path TEXT NOT NULL,
+        source_name TEXT,
+        downloaded_at TEXT NOT NULL,
         FOREIGN KEY(ayah_id) REFERENCES ayahs(id)
       )
     ''');
+    await _ensureColumn(database, 'audio_metadata', 'source_name', 'TEXT');
+    await _ensureColumn(database, 'audio_metadata', 'reciter_id', "TEXT NOT NULL DEFAULT 'local'");
+    await _ensureColumn(database, 'audio_metadata', 'source_url', 'TEXT');
+
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS app_activity(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ayah_id INTEGER,
+        kind TEXT NOT NULL,
+        grade TEXT,
+        score REAL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(ayah_id) REFERENCES ayahs(id)
+      )
+    ''');
+
     await database.execute(
       'CREATE INDEX IF NOT EXISTS idx_ayahs_surah ON ayahs(surah_id, ayah_number)',
     );
@@ -65,5 +82,21 @@ class AppDatabase {
     await database.execute(
       'CREATE INDEX IF NOT EXISTS idx_hifz_due ON hifz_progress(next_review_at, strength)',
     );
+    await database.execute(
+      'CREATE INDEX IF NOT EXISTS idx_activity_created ON app_activity(created_at)',
+    );
+  }
+
+  Future<void> _ensureColumn(
+    Database database,
+    String table,
+    String column,
+    String definition,
+  ) async {
+    final info = await database.rawQuery('PRAGMA table_info($table)');
+    final exists = info.any((row) => row['name'] == column);
+    if (!exists) {
+      await database.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+    }
   }
 }

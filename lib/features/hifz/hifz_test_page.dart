@@ -36,11 +36,10 @@ class _HifzTestPageState extends State<HifzTestPage> {
     return result;
   }
 
-  Future<void> _score(Ayah ayah, bool success, int total) async {
+  Future<void> _score(Ayah ayah, RecallGrade grade, int total) async {
     final hifz = context.read<HifzRepository>();
-    await hifz.recordTest(ayah.id, success);
-    await hifz.record(ayah.id, success);
-    if (success) correct++;
+    await hifz.recordGrade(ayah.id, grade, kind: 'test');
+    if (grade == RecallGrade.remembered) correct++;
     if (!mounted) return;
     setState(() {
       if (index + 1 < total) {
@@ -125,14 +124,21 @@ class _HifzTestPageState extends State<HifzTestPage> {
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: () => _score(ayah, false, ayahs.length),
-                          child: const Text('Needs work'),
+                          onPressed: () => _score(ayah, RecallGrade.forgot, ayahs.length),
+                          child: const Text('Forgot'),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => _score(ayah, RecallGrade.partial, ayahs.length),
+                          child: const Text('Partial'),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
                       Expanded(
                         child: FilledButton(
-                          onPressed: () => _score(ayah, true, ayahs.length),
+                          onPressed: () => _score(ayah, RecallGrade.remembered, ayahs.length),
                           child: const Text('Correct'),
                         ),
                       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/audio/audio_reciter.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../core/settings/settings_service.dart';
 import '../../data/models/ayah.dart';
@@ -27,6 +28,11 @@ class AppController extends ChangeNotifier {
   int reminderMinute = 0;
   ThemeMode themeMode = ThemeMode.system;
   bool loaded = false;
+  bool onboardingCompleted = false;
+  int startAyahId = 1;
+  String reciterId = AudioReciters.alafasy.id;
+
+  AudioReciter get reciter => AudioReciters.byId(reciterId);
 
   AppController({
     required this.hifz,
@@ -42,6 +48,9 @@ class AppController extends ChangeNotifier {
     reminderHour = settings.reminderHour;
     reminderMinute = settings.reminderMinute;
     themeMode = settings.themeMode;
+    onboardingCompleted = settings.onboardingCompleted;
+    startAyahId = settings.startAyahId;
+    reciterId = settings.reciterId;
     await refresh();
     if (remindersEnabled) {
       await notifications.scheduleDaily(
@@ -95,6 +104,22 @@ class AppController extends ChangeNotifier {
   Future<void> setThemeMode(ThemeMode value) async {
     themeMode = value;
     await settingsService.setThemeMode(value);
+    notifyListeners();
+  }
+
+  Future<void> setReciter(String value) async {
+    reciterId = AudioReciters.byId(value).id;
+    await settingsService.setReciterId(reciterId);
+    notifyListeners();
+  }
+
+  Future<void> completeOnboarding({required int target, required int startId, required TimeOfDay reminder}) async {
+    dailyTarget = target;
+    startAyahId = startId;
+    reminderHour = reminder.hour;
+    reminderMinute = reminder.minute;
+    onboardingCompleted = true;
+    await settingsService.completeOnboarding(dailyTarget: target, startAyahId: startId, hour: reminder.hour, minute: reminder.minute);
     notifyListeners();
   }
 

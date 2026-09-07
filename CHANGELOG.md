@@ -1,15 +1,13 @@
 # Changelog
 
-## 1.0.0
-- Completed offline-first Qur’an reader and Hifz V1.
-- Added Surah/Juz/Page navigation, search, bookmarks, and reading progress.
-- Added adaptive Hifz planning, revision, recall tests, and progress metrics.
-- Added persistent settings, theme mode, reminder scheduling, and notification permissions.
-- Migrated Android project to Flutter Plugin DSL and a GitHub-ready build/release workflow.
+## 2.1.1+6
 
-## 1.0.1 - Android installer compatibility rebuild
-- Rebuilt Android configuration around Flutter's Plugin DSL structure.
-- Removed malformed adaptive launcher icon resources that had no intrinsic size.
-- Added real PNG normal and round launcher icons across all Android densities.
-- Preserved Java 17 and core library desugaring required by local notifications.
-- Added APK archive, signature, package metadata and launcher-icon validation to GitHub Actions.
+- Replaced the EveryAyah online provider with Al Quran Cloud / Islamic Network CDN as the single online audio provider.
+- Updated reciter metadata to Al Quran Cloud audio edition identifiers and documented bitrates.
+- Streaming and offline downloads now use Al Quran Cloud global ayah-number URLs.
+- Kept ayah-synchronized highlighting, auto-advance, repetition controls, playback speed, and local audio import.
+- Added provider URL validation tests.
+
+## 2.1.0+5
+
+- Added provider-based verse-by-verse streaming and managed offline audio downloads.

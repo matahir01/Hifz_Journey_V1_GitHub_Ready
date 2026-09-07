@@ -204,6 +204,28 @@ class QuranRepository {
     return rows.isEmpty ? null : Ayah.fromMap(rows.first);
   }
 
+  Future<List<Ayah>> ayahsForPage(int page) async {
+    final db = await database.db;
+    final rows = await db.query(
+      'ayahs',
+      where: 'page = ?',
+      whereArgs: [page],
+      orderBy: 'id',
+    );
+    return rows.map(Ayah.fromMap).toList();
+  }
+
+  Future<Ayah?> ayahByReference(int surahId, int ayahNumber) async {
+    final db = await database.db;
+    final rows = await db.query(
+      'ayahs',
+      where: 'surah_id = ? AND ayah_number = ?',
+      whereArgs: [surahId, ayahNumber],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : Ayah.fromMap(rows.first);
+  }
+
   Future<int> maxPage() async {
     final db = await database.db;
     final rows = await db.rawQuery('SELECT MAX(page) AS page FROM ayahs');

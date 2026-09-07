@@ -6,6 +6,7 @@ import '../../data/repositories/quran_repository.dart';
 import 'bookmarks_page.dart';
 import 'quran_search_page.dart';
 import 'reader_page.dart';
+import 'mushaf_page.dart';
 import 'surah_page.dart';
 
 class QuranHubPage extends StatefulWidget {
@@ -56,6 +57,14 @@ class _QuranHubPageState extends State<QuranHubPage>
                     MaterialPageRoute(builder: (_) => const QuranSearchPage()),
                   ),
                   icon: const Icon(Icons.search),
+                ),
+                IconButton(
+                  tooltip: 'Mushaf mode',
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MushafPage()),
+                  ),
+                  icon: const Icon(Icons.chrome_reader_mode_outlined),
                 ),
                 IconButton(
                   tooltip: 'Bookmarks',

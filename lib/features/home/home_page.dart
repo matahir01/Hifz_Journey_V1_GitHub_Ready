@@ -178,7 +178,7 @@ class _TodayCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(child: _Metric(value: '$due', label: 'Revision')),
-                Expanded(child: _Metric(value: '$target', label: 'New ayahs')),
+                Expanded(child: _Metric(value: '$target', label: 'Daily target')),
                 Expanded(child: _Metric(value: '$retained', label: 'Retained')),
               ],
             ),
