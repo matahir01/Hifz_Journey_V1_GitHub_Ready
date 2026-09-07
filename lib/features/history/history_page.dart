@@ -67,7 +67,19 @@ class _Calendar extends StatelessWidget {
     return Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
       Text(DateFormat('MMMM yyyy').format(now), style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
       const SizedBox(height: 12),
-      const Row(children: [for (final day in ['M','T','W','T','F','S','S']) Expanded(child: Center(child: Text(day, style: TextStyle(fontWeight: FontWeight.w700))))]),
+      Row(
+        children: [
+          for (final day in const ['M', 'T', 'W', 'T', 'F', 'S', 'S'])
+            Expanded(
+              child: Center(
+                child: Text(
+                  day,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+        ],
+      ),
       const SizedBox(height: 6),
       GridView.builder(
         shrinkWrap: true,
