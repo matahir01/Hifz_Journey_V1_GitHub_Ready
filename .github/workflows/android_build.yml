@@ -40,6 +40,27 @@ jobs:
       - name: Prepare Android Gradle wrapper
         run: bash tool/bootstrap_android_wrapper.sh
 
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+      - name: Install Android NDK 29
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+          yes | "$SDKMANAGER" "ndk;29.0.13113456"
+          test -d "$ANDROID_HOME/ndk/29.0.13113456"
+
       - name: Build release APK
         run: flutter build apk --release
 
