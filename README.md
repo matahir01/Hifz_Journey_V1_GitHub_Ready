@@ -1,44 +1,25 @@
-# Hifz Journey V2.1.1
+# Hifz Journey V3
 
-Hifz Journey is an offline-first Flutter Qur’an reading, memorization, revision and retention companion.
+**Read. Memorize. Revise. Retain.**
 
-## Al Quran Cloud audio
+Offline-first Flutter Qur'an memorization companion with Qur'an reading, Hifz planning, spaced revision, Al Quran Cloud ayah audio, streaming/offline downloads, repetition controls, weak-ayah tracking, history/calendar analytics, backup/restore, Mushaf page grouping, and the V3 Recitation Coach.
 
-V2.1.1 uses **Al Quran Cloud / Islamic Network CDN as the single online audio provider**.
+## V3 Recitation Coach — Tarteel Whisper
 
-- Stream recitation verse-by-verse without intentionally saving a permanent copy.
-- Download a Surah for offline playback inside the app’s private storage.
-- Automatically prefer a downloaded ayah when it is available.
-- Ayah-synchronized playback: the active verse is highlighted and Reader mode advances with the recitation.
-- Repetition controls: ×1, ×3, ×5, ×10.
-- Playback speed: 0.75×, 1.0×, 1.25×.
-- Selectable reciters backed by documented Al Quran Cloud audio edition identifiers.
-- Optional local audio-pack import remains as a fallback for files the user already has permission to use.
-- No Quran Foundation credentials, OAuth client secret, or Hifz Journey backend is required for this audio path.
+Open **Home → Recitation coach**. Hifz Journey hides the ayah, listens to the learner's recitation, shows a live Arabic transcript, aligns it against the expected Qur'an text, marks likely correct/changed/missed words, calculates a memorization score, and feeds that result into the retention schedule.
 
-The CDN pattern used by the provider is:
+V3.0 Alpha 3 uses the Qur'an-specialized **Tarteel Whisper Base Arabic Qur'an** model through a GGML q8_0 conversion compatible with `whisper.cpp`. The model is not bundled in the APK. The learner downloads it once from the model screen (~77 MB), after which recognition runs on-device and can work offline.
 
-`https://cdn.islamic.network/quran/audio/{bitrate}/{edition}/{globalAyahNumber}.mp3`
+The app intentionally does **not** provide the expected ayah as Whisper's initial prompt, because doing so could bias transcription toward the answer and make memorization grading less trustworthy.
 
-Hifz Journey’s bundled Qur’an database uses global ayah IDs 1–6236, so the same ID can be used directly for Al Quran Cloud’s ayah audio numbering.
+The Recitation Coach assesses **text/memorization accuracy**. It does not claim teacher-level tajwid, makhraj, or madd judgement.
 
-No Qur’an MP3 files are bundled in this repository. Before public/commercial distribution, verify the provider’s current usage and redistribution terms for offline downloads.
+## Audio
 
-## Qur’an text
+Online recitation audio uses Al Quran Cloud / Islamic Network ayah-level audio. Streaming and explicit offline downloads use the same player. Hifz Journey does not require a Quran Foundation OAuth backend.
 
-Arabic Qur’an text is sourced from the Tanzil Project and must remain verbatim. Preserve the required Tanzil attribution and link in distributed versions.
+## Build on GitHub
 
-## Other V2 systems
+The included GitHub Actions workflow builds the Android release APK. Push this repository to GitHub and open **Actions** to obtain the generated APK artifact.
 
-- First-run Hifz plan and configurable starting point.
-- Adaptive revision and weak-ayah detection.
-- Three-level recall grading: Forgot / Partial / Remembered.
-- Enhanced Hifz session.
-- Mushaf/page mode.
-- History, calendar and retention analytics.
-- Local backup and restore. Audio downloads themselves are intentionally excluded from backups and can be downloaded again.
-- Local reminders.
-
-## Build
-
-GitHub Actions is configured to run tests/analyze and build a release APK. The Android project includes Internet permission for streaming/downloads and the desugaring setup required by local notifications.
+See `V3_SCOPE.md` for the V3 roadmap and `V2_AUDIO_ARCHITECTURE.md` for the audio design.

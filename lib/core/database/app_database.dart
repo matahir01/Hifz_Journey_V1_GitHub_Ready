@@ -32,7 +32,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 5,
+      version: 6,
       onConfigure: (database) async {
         await database.execute('PRAGMA foreign_keys = ON');
       },
@@ -59,6 +59,20 @@ class AppDatabase {
     await _ensureColumn(database, 'audio_metadata', 'source_url', 'TEXT');
 
     await database.execute('''
+      CREATE TABLE IF NOT EXISTS recitation_attempts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ayah_id INTEGER NOT NULL,
+        transcript TEXT NOT NULL,
+        score REAL NOT NULL,
+        correct_words INTEGER NOT NULL DEFAULT 0,
+        missing_words INTEGER NOT NULL DEFAULT 0,
+        substituted_words INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(ayah_id) REFERENCES ayahs(id)
+      )
+    ''');
+
+    await database.execute('''
       CREATE TABLE IF NOT EXISTS app_activity(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ayah_id INTEGER,
@@ -69,6 +83,23 @@ class AppDatabase {
         FOREIGN KEY(ayah_id) REFERENCES ayahs(id)
       )
     ''');
+
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS recitation_attempts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ayah_id INTEGER NOT NULL,
+        recognizer TEXT NOT NULL,
+        transcript TEXT,
+        score REAL NOT NULL,
+        grade TEXT NOT NULL,
+        issues TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(ayah_id) REFERENCES ayahs(id)
+      )
+    ''');
+    await database.execute(
+      'CREATE INDEX IF NOT EXISTS idx_recitation_attempts_ayah ON recitation_attempts(ayah_id, created_at)',
+    );
 
     await database.execute(
       'CREATE INDEX IF NOT EXISTS idx_ayahs_surah ON ayahs(surah_id, ayah_number)',
@@ -84,6 +115,9 @@ class AppDatabase {
     );
     await database.execute(
       'CREATE INDEX IF NOT EXISTS idx_activity_created ON app_activity(created_at)',
+    );
+    await database.execute(
+      'CREATE INDEX IF NOT EXISTS idx_recitation_attempts_ayah ON recitation_attempts(ayah_id, created_at)',
     );
   }
 

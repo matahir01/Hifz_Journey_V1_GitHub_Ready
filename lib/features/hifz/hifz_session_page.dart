@@ -7,6 +7,7 @@ import '../../data/models/ayah.dart';
 import '../../data/repositories/hifz_repository.dart';
 import '../../data/repositories/quran_repository.dart';
 import '../../domain/hifz/hifz_engine.dart';
+import '../recitation/ai_recitation_test_page.dart';
 import '../shell/app_controller.dart';
 
 class HifzSessionPage extends StatefulWidget {
@@ -232,6 +233,22 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                         const Spacer(),
+                        IconButton(
+                          tooltip: 'AI recitation test',
+                          onPressed: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AiRecitationTestPage(ayahId: ayah.id),
+                              ),
+                            );
+                            if (mounted) {
+                              await context.read<AppController>().refresh();
+                              setState(() => plan = _loadPlan());
+                            }
+                          },
+                          icon: const Icon(Icons.mic_none_rounded),
+                        ),
                         IconButton(
                           tooltip: 'Download this ayah',
                           onPressed: () => _download(ayah),

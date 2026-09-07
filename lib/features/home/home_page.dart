@@ -3,9 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../../data/repositories/quran_repository.dart';
 import '../hifz/hifz_session_page.dart';
-import '../hifz/hifz_test_page.dart';
 import '../quran/bookmarks_page.dart';
 import '../quran/reader_page.dart';
+import '../recitation/ai_recitation_test_page.dart';
 import '../shell/app_controller.dart';
 
 class HomePage extends StatelessWidget {
@@ -101,13 +101,15 @@ class HomePage extends StatelessWidget {
                   },
                 ),
                 _ActionCard(
-                  icon: Icons.psychology_alt_outlined,
-                  title: 'Test recall',
-                  subtitle: 'Practice without seeing the text',
+                  icon: Icons.mic_rounded,
+                  title: 'AI recitation test',
+                  subtitle: 'Hide the ayah, recite, detect mistakes',
                   onTap: () async {
                     await Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const HifzTestPage()),
+                      MaterialPageRoute(
+                        builder: (_) => const AiRecitationTestPage(),
+                      ),
                     );
                     if (context.mounted) {
                       await context.read<AppController>().refresh();

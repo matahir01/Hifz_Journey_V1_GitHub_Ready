@@ -24,7 +24,47 @@ class SettingsPage extends StatelessWidget {
       ])),
       const SizedBox(height: 14),
       Card(child: Column(children: [
-        ListTile(leading: const Icon(Icons.record_voice_over_outlined), title: const Text('Preferred reciter'), subtitle: Text(controller.reciter.name), trailing: DropdownButton<String>(value: controller.reciterId, underline: const SizedBox.shrink(), items: AudioReciters.all.map((r) => DropdownMenuItem(value: r.id, child: Text(r.name, overflow: TextOverflow.ellipsis))).toList(), onChanged: (v) { if (v != null) controller.setReciter(v); })),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const Icon(Icons.record_voice_over_outlined),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Text(
+                  'Preferred reciter',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                flex: 2,
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: controller.reciterId,
+                    isExpanded: true,
+                    items: AudioReciters.all
+                        .map(
+                          (r) => DropdownMenuItem(
+                            value: r.id,
+                            child: Text(
+                              r.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) controller.setReciter(v);
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         const Divider(height: 1),
         ListTile(leading: const Icon(Icons.headphones_outlined), title: const Text('Reciter & audio'), subtitle: const Text('Stream verse-by-verse or download Surahs for offline playback.'), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AudioLibraryPage()))),
       ])),
@@ -41,7 +81,7 @@ class SettingsPage extends StatelessWidget {
       const SizedBox(height: 14),
       Card(child: ListTile(leading: const Icon(Icons.restart_alt), title: const Text('Reset Hifz progress'), subtitle: const Text('Bookmarks and reading position are kept.'), onTap: () => _confirmReset(context))),
       const SizedBox(height: 16),
-      Center(child: Text('Hifz Journey 2.1.0 • Offline-first + streaming audio', style: Theme.of(context).textTheme.bodySmall)),
+      Center(child: Text('Hifz Journey 2.1.2 • Offline-first + streaming audio', style: Theme.of(context).textTheme.bodySmall)),
     ]));
   }
 

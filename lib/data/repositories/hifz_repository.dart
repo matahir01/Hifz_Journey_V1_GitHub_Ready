@@ -155,6 +155,48 @@ class HifzRepository {
 
   Future<void> recordTest(int ayahId, bool success, {double? score}) => recordGrade(ayahId, success ? RecallGrade.remembered : RecallGrade.forgot, kind: 'test');
 
+  Future<void> recordAiRecitation(
+    int ayahId, {
+    required RecallGrade grade,
+    required double score,
+    required String transcript,
+    required int correctWords,
+    required int missingWords,
+    required int substitutedWords,
+  }) async {
+    final db = await database.db;
+    await recordGrade(ayahId, grade, kind: 'ai_recitation');
+    await db.insert('recitation_attempts', {
+      'ayah_id': ayahId,
+      'transcript': transcript,
+      'score': score,
+      'correct_words': correctWords,
+      'missing_words': missingWords,
+      'substituted_words': substitutedWords,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<void> recordRecitationAssessment({
+    required int ayahId,
+    required RecallGrade grade,
+    required double score,
+    required String transcript,
+    required String issues,
+  }) async {
+    final db = await database.db;
+    await recordGrade(ayahId, grade, kind: 'recitation_test');
+    await db.insert('recitation_attempts', {
+      'ayah_id': ayahId,
+      'recognizer': 'device_arabic_v1',
+      'transcript': transcript,
+      'score': score,
+      'grade': grade.name,
+      'issues': issues,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
   Future<List<WeakAyah>> weakAyahs({int limit = 30}) async {
     final db = await database.db;
     final rows = await db.rawQuery('''
@@ -216,6 +258,7 @@ class HifzRepository {
       await txn.delete('test_results');
       await txn.delete('sessions');
       await txn.delete('app_activity');
+      await txn.delete('recitation_attempts');
     });
   }
 }

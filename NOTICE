@@ -7,3 +7,9 @@ Text license information — https://tanzil.net/docs/Text_License
 The Qur’an text must remain verbatim and required attribution must be retained.
 
 No recitation audio or translation dataset is redistributed by this package.
+
+AI recitation model:
+- Original model: tarteel-ai/whisper-base-ar-quran
+- GGML q8_0 conversion: sadrapp/whisper-base-ar-quran-ggml
+- License: Apache License 2.0
+- Model is downloaded by the user and is not redistributed inside this source archive or APK.

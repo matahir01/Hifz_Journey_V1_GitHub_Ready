@@ -19,6 +19,7 @@ class BackupService {
     'bookmarks',
     'reading_progress',
     'app_activity',
+    'recitation_attempts',
   ];
 
   Future<Uri?> exportBackup() async {
@@ -39,7 +40,7 @@ class BackupService {
 
     final payload = <String, Object?>{
       'format': 'hifz-journey-backup',
-      'version': 3,
+      'version': 4,
       'created_at': DateTime.now().toIso8601String(),
       'settings': settings,
       'tables': tables,

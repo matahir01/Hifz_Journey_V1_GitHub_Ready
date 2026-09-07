@@ -49,11 +49,12 @@ class QuranAudioService {
         );
         await player.setUrl(uri.toString());
       }
+      final completed = player.processingStateStream.firstWhere(
+        (state) => state == ProcessingState.completed,
+      );
       await player.play();
-      if (generation != _playGeneration ||
-          player.processingState != ProcessingState.completed) {
-        break;
-      }
+      await completed;
+      if (generation != _playGeneration) break;
     }
     if (generation == _playGeneration) _activeAyahController.add(null);
   }
@@ -85,11 +86,12 @@ class QuranAudioService {
           );
           await player.setUrl(uri.toString());
         }
+        final completed = player.processingStateStream.firstWhere(
+          (state) => state == ProcessingState.completed,
+        );
         await player.play();
-        if (generation != _playGeneration ||
-            player.processingState != ProcessingState.completed) {
-          break;
-        }
+        await completed;
+        if (generation != _playGeneration) break;
       }
     }
     if (generation == _playGeneration) _activeAyahController.add(null);
