@@ -4,11 +4,15 @@ plugins {
     id 'dev.flutter.flutter-gradle-plugin'
 }
 
+def releaseKeystorePath = System.getenv('ANDROID_KEYSTORE_PATH')
+def releaseKeystorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('ANDROID_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('ANDROID_KEY_PASSWORD')
+def hasReleaseSigning = releaseKeystorePath && releaseKeystorePassword && releaseKeyAlias && releaseKeyPassword
+
 android {
     namespace 'com.hifzjourney.app'
     compileSdk flutter.compileSdkVersion
-    // whisper_ggml requires this side-by-side NDK for Android native inference.
-    ndkVersion '29.0.13113456'
 
     compileOptions {
         coreLibraryDesugaringEnabled true
@@ -28,13 +32,26 @@ android {
         versionName flutter.versionName
     }
 
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Installable CI/test release. For Play Store distribution, replace this
-            // with a private upload/release key held in GitHub Secrets.
-            signingConfig signingConfigs.debug
-            minifyEnabled false
-            shrinkResources false
+            // CI falls back to the debug key until a permanent release key is
+            // provided through GitHub Secrets. Once configured, every APK/AAB
+            // is signed with the same key so Android can update in place.
+            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }
