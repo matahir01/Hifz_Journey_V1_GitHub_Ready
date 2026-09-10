@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android Release
 
 on:
   push:
@@ -10,8 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  build-apk:
-    name: Build installable release APK
+  build-android:
+    name: Build optimized Android release
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -50,57 +50,80 @@ jobs:
           fi
           yes | "$SDKMANAGER" --licenses >/dev/null || true
 
-      - name: Install Android NDK 29
+      # Until the permanent release/upload key is added to GitHub Secrets,
+      # preserve one CI debug keystore so consecutive test APKs can update each
+      # other instead of receiving a new signature on every hosted runner.
+      - name: Preserve CI test signing key
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: hifz-journey-ci-signing-v1
+
+      - name: Prepare permanent release signing
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         shell: bash
         run: |
           set -euo pipefail
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then
-            SDKMANAGER="$(command -v sdkmanager)"
-          fi
-          "$SDKMANAGER" "ndk;29.0.13113456"
-          test -d "$ANDROID_HOME/ndk/29.0.13113456"
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/hifz-release.jks
+          test -s android/app/hifz-release.jks
 
-      - name: Build release APK
-        run: flutter build apk --release
+      - name: Build optimized split APKs
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/hifz-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: flutter build apk --release --split-per-abi
 
-      - name: Validate APK archive and signature
+      - name: Build Play Store app bundle
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/hifz-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: flutter build appbundle --release
+
+      - name: Validate Android artifacts
         shell: bash
         run: |
           set -euo pipefail
-          APK="build/app/outputs/flutter-apk/app-release.apk"
-          test -s "$APK"
-          unzip -t "$APK" >/dev/null
           BUILD_TOOLS="$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
-          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK"
-          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/aapt" dump badging "$APK" | tee apk-badging.txt
-          grep -q "package: name='com.hifzjourney.app'" apk-badging.txt
-          grep -q "application-label:'Hifz Journey'" apk-badging.txt
-          grep -q "application-icon-" apk-badging.txt
-
-      - name: Collect APK
-        run: |
           mkdir -p release
-          cp build/app/outputs/flutter-apk/app-release.apk release/Hifz-Journey.apk
-          cp apk-badging.txt release/apk-badging.txt
-          sha256sum release/Hifz-Journey.apk | tee release/Hifz-Journey.apk.sha256
-          ls -lh release/Hifz-Journey.apk
 
-      - name: Upload APK artifact
+          found=0
+          for APK in build/app/outputs/flutter-apk/*-release.apk; do
+            [ -f "$APK" ] || continue
+            found=1
+            unzip -t "$APK" >/dev/null
+            "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK"
+            BADGING="$($ANDROID_HOME/build-tools/$BUILD_TOOLS/aapt dump badging "$APK")"
+            echo "$BADGING" | grep -q "package: name='com.hifzjourney.app'"
+            echo "$BADGING" | grep -q "application-label:'Hifz Journey'"
+            cp "$APK" "release/$(basename "$APK")"
+          done
+          test "$found" -eq 1
+
+          AAB="build/app/outputs/bundle/release/app-release.aab"
+          test -s "$AAB"
+          cp "$AAB" release/Hifz-Journey.aab
+
+          (cd release && sha256sum *.apk *.aab > SHA256SUMS.txt)
+          ls -lh release/
+
+      - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Hifz-Journey-APK
-          path: |
-            release/Hifz-Journey.apk
-            release/Hifz-Journey.apk.sha256
-            release/apk-badging.txt
+          name: Hifz-Journey-Android
+          path: release/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Attach APK to tagged GitHub release
+      - name: Attach Android files to tagged GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release/Hifz-Journey.apk
-            release/Hifz-Journey.apk.sha256
+            release/*.apk
+            release/Hifz-Journey.aab
+            release/SHA256SUMS.txt
