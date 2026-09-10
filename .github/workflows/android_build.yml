@@ -14,6 +14,11 @@ jobs:
     name: Build optimized Android release
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
     steps:
       - name: Checkout source
@@ -50,38 +55,29 @@ jobs:
           fi
           yes | "$SDKMANAGER" --licenses >/dev/null || true
 
-      # Until the permanent release/upload key is added to GitHub Secrets,
-      # preserve one CI debug keystore so consecutive test APKs can update each
-      # other instead of receiving a new signature on every hosted runner.
       - name: Preserve CI test signing key
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 == '' }}
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: hifz-journey-ci-signing-v1
 
       - name: Prepare permanent release signing
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
         shell: bash
         run: |
           set -euo pipefail
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/hifz-release.jks
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/hifz-release.jks
           test -s android/app/hifz-release.jks
 
       - name: Build optimized split APKs
         env:
           ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/hifz-release.jks
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: flutter build apk --release --split-per-abi
 
       - name: Build Play Store app bundle
         env:
           ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/hifz-release.jks
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: flutter build appbundle --release
 
       - name: Validate Android artifacts
