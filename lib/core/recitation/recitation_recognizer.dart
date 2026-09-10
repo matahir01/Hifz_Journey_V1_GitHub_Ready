@@ -54,12 +54,13 @@ abstract class RecitationRecognizer {
   Future<void> dispose();
 }
 
-/// Fast recognizer using Android/iOS speech recognition.
+/// Fast Android/iOS Arabic recognizer.
 ///
-/// Hifz Journey deliberately requests the normal network-backed recognizer by
-/// default. This matches the path that usually powers fast Arabic voice typing
-/// on Android. Long recitations are handled by automatically reopening the
-/// recognizer when the speech service ends a segment.
+/// Hifz Journey deliberately uses the normal network-backed speech service by
+/// default. The recognizer also verifies that returned text is actually Arabic
+/// script. Some Android speech providers silently fall back to English and
+/// return transliteration such as "alhamdulillah"; those results are rejected
+/// and another Arabic locale is tried automatically.
 class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final _controller =
@@ -67,9 +68,12 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
 
   RecitationRecognitionState _state =
       RecitationRecognitionState.initial();
-  String? _arabicLocale;
+
+  final List<String> _arabicLocales = <String>[];
+  int _localeIndex = 0;
   bool _keepListening = false;
   bool _starting = false;
+  bool _switchingLocale = false;
   final List<String> _segments = <String>[];
   String _currentSegment = '';
   Timer? _restartTimer;
@@ -85,11 +89,67 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     if (!_controller.isClosed) _controller.add(value);
   }
 
+  String get _activeLocale =>
+      _arabicLocales.isEmpty ? 'ar-SA' : _arabicLocales[_localeIndex];
+
   String get _combinedTranscript {
     final values = <String>[..._segments];
     final current = _currentSegment.trim();
     if (current.isNotEmpty) values.add(current);
     return values.join(' ').trim();
+  }
+
+  static bool _containsArabicScript(String text) {
+    return RegExp(
+      r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]',
+    ).hasMatch(text);
+  }
+
+  static bool _containsLatinLetters(String text) {
+    return RegExp(r'[A-Za-z]').hasMatch(text);
+  }
+
+  void _buildArabicLocaleList(List<stt.LocaleName> locales) {
+    _arabicLocales.clear();
+
+    void addMatching(String wanted) {
+      final normalizedWanted = wanted.toLowerCase().replaceAll('-', '_');
+      for (final locale in locales) {
+        final normalized = locale.localeId.toLowerCase().replaceAll('-', '_');
+        if (normalized == normalizedWanted &&
+            !_arabicLocales.contains(locale.localeId)) {
+          _arabicLocales.add(locale.localeId);
+        }
+      }
+    }
+
+    // Saudi Arabic first because it matches the user's Google voice setting
+    // and is the most natural default for Qur'an recitation.
+    for (final preferred in const [
+      'ar_SA',
+      'ar_EG',
+      'ar_AE',
+      'ar_QA',
+      'ar_KW',
+      'ar_BH',
+      'ar_OM',
+      'ar_JO',
+    ]) {
+      addMatching(preferred);
+    }
+
+    for (final locale in locales) {
+      final normalized = locale.localeId.toLowerCase();
+      if (normalized.startsWith('ar') &&
+          !_arabicLocales.contains(locale.localeId)) {
+        _arabicLocales.add(locale.localeId);
+      }
+    }
+
+    // Some Android recognizers accept ar-SA even when locales() does not list
+    // it. Keeping this explicit fallback prevents accidental English default.
+    if (_arabicLocales.isEmpty) _arabicLocales.add('ar-SA');
+    _localeIndex = 0;
   }
 
   @override
@@ -117,16 +177,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
 
     if (available) {
       final locales = await _speech.locales();
-      for (final locale in locales) {
-        final id = locale.localeId.toLowerCase();
-        if (id == 'ar_sa' || id == 'ar-sa') {
-          _arabicLocale = locale.localeId;
-          break;
-        }
-        if (_arabicLocale == null && id.startsWith('ar')) {
-          _arabicLocale = locale.localeId;
-        }
-      }
+      _buildArabicLocaleList(locales);
     }
 
     _emit(_state.copyWith(available: available, clearError: true));
@@ -134,7 +185,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
   }
 
   void _scheduleRestart() {
-    if (!_keepListening || _starting) return;
+    if (!_keepListening || _starting || _switchingLocale) return;
     _restartTimer?.cancel();
     _restartTimer = Timer(const Duration(milliseconds: 250), () async {
       if (!_keepListening) return;
@@ -149,16 +200,61 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     });
   }
 
+  Future<void> _tryNextArabicLocale() async {
+    if (!_keepListening || _switchingLocale) return;
+    if (_localeIndex + 1 >= _arabicLocales.length) {
+      _emit(_state.copyWith(
+        listening: false,
+        error:
+            'The phone speech service returned Latin transliteration instead of Arabic text. Arabic recognition is enabled, but this speech provider is not returning Arabic script to Hifz Journey.',
+      ));
+      _keepListening = false;
+      return;
+    }
+
+    _switchingLocale = true;
+    _localeIndex++;
+    _currentSegment = '';
+    try {
+      await _speech.cancel().timeout(const Duration(seconds: 1));
+    } catch (_) {}
+    _switchingLocale = false;
+
+    if (_keepListening) {
+      await Future<void>.delayed(const Duration(milliseconds: 180));
+      await _begin(onDevice: false);
+    }
+  }
+
   Future<void> _begin({required bool onDevice}) async {
     if (_starting || !_keepListening) return;
     _starting = true;
     _currentSegment = '';
+
     try {
       await _speech.listen(
         onResult: (result) {
-          _currentSegment = result.recognizedWords.trim();
+          final raw = result.recognizedWords.trim();
+          if (raw.isEmpty) return;
 
-          if (result.finalResult && _currentSegment.isNotEmpty) {
+          final isArabic = _containsArabicScript(raw);
+          final looksLatinOnly = !isArabic && _containsLatinLetters(raw);
+
+          if (looksLatinOnly) {
+            // Do not display or grade transliteration as if it were Qur'an
+            // Arabic. Wait for a final result before changing locale so that a
+            // temporary partial hypothesis does not interrupt the user.
+            if (result.finalResult) {
+              unawaited(_tryNextArabicLocale());
+            }
+            return;
+          }
+
+          if (!isArabic) return;
+
+          _currentSegment = raw;
+
+          if (result.finalResult) {
             final last = _segments.isEmpty ? null : _segments.last;
             if (last != _currentSegment) _segments.add(_currentSegment);
             _currentSegment = '';
@@ -174,12 +270,13 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
         },
         listenFor: const Duration(minutes: 5),
         pauseFor: const Duration(seconds: 4),
-        localeId: _arabicLocale,
+        localeId: _activeLocale,
         partialResults: true,
         cancelOnError: false,
         onDevice: onDevice,
         listenMode: stt.ListenMode.dictation,
       );
+
       _emit(_state.copyWith(
         listening: true,
         transcript: _combinedTranscript,
@@ -206,6 +303,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     _restartTimer?.cancel();
     _segments.clear();
     _currentSegment = '';
+    _localeIndex = 0;
     _keepListening = true;
     _emit(_state.copyWith(
       listening: true,
@@ -214,16 +312,16 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
       clearError: true,
     ));
 
-    // Network-backed recognition is intentional. If the caller explicitly
-    // asks for on-device recognition, try it once and fall back to network.
     if (preferOnDevice) {
       try {
         await _begin(onDevice: true);
         return;
       } catch (_) {
-        // Continue to the normal online recognizer below.
+        // Continue to the normal internet-backed recognizer below.
       }
     }
+
+    // Network recognition is intentional for speed and quality.
     await _begin(onDevice: false);
   }
 
@@ -234,7 +332,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     try {
       await _speech.stop().timeout(const Duration(seconds: 2));
     } catch (_) {
-      // Preserve the partial transcript instead of making Stop feel stuck.
+      // Preserve the latest Arabic partial result rather than making Stop hang.
     }
     _emit(_state.copyWith(
       listening: false,
