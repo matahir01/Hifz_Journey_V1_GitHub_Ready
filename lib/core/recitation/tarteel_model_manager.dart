@@ -25,22 +25,19 @@ class TarteelModelStatus {
   }
 }
 
-/// Manages the Quran-specialized Whisper GGML model used by Hifz Journey.
+/// Manages the Qur'an-specialized Whisper Tiny Q8 model used by Hifz Journey.
 ///
-/// The model is downloaded once from the public Apache-2.0 GGML conversion of
-/// `tarteel-ai/whisper-base-ar-quran` and stored in the app's private support
-/// directory. It is intentionally not bundled with the APK so users who do not
-/// use AI recitation do not pay the ~77 MB installation-size cost.
+/// Tiny is deliberately preferred over Base for live mobile recitation: it is
+/// substantially smaller and faster on Android CPUs while remaining tuned for
+/// Qur'anic Arabic. The model is downloaded once and stored privately.
 class TarteelModelManager {
-  static const modelFileName = 'tarteel-whisper-base-ar-quran-q8_0.bin';
+  static const modelFileName =
+      'tarteel-ai-whisper-tiny-ar-quran-ggml-q8_0.bin';
   static const modelDownloadUrl =
-      'https://huggingface.co/sadrapp/whisper-base-ar-quran-ggml/resolve/main/ggml-model-q8_0.bin?download=true';
+      'https://huggingface.co/MI9153/rafiq-quran-ai/resolve/main/tarteel-ai-whisper-tiny-ar-quran-ggml-q8_0.bin?download=true';
 
-  // The published q8_0 file is approximately 77 MB. We use a deliberately
-  // broad sanity range so a truncated HTML/error response is never accepted as
-  // a model while remaining tolerant of repository metadata changes.
-  static const minimumValidBytes = 60 * 1024 * 1024;
-  static const maximumExpectedBytes = 100 * 1024 * 1024;
+  static const minimumValidBytes = 35 * 1024 * 1024;
+  static const maximumExpectedBytes = 55 * 1024 * 1024;
 
   final StreamController<TarteelModelStatus> _states =
       StreamController<TarteelModelStatus>.broadcast();
@@ -53,7 +50,8 @@ class TarteelModelManager {
 
   Future<Directory> _modelDirectory() async {
     final support = await getApplicationSupportDirectory();
-    final directory = Directory('${support.path}${Platform.pathSeparator}models');
+    final directory =
+        Directory('${support.path}${Platform.pathSeparator}models');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }
@@ -109,7 +107,10 @@ class TarteelModelManager {
       );
 
       final request = await client.getUrl(Uri.parse(modelDownloadUrl));
-      request.headers.set(HttpHeaders.acceptHeader, 'application/octet-stream');
+      request.headers.set(
+        HttpHeaders.acceptHeader,
+        'application/octet-stream',
+      );
       final response = await request.close();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException(
@@ -149,6 +150,7 @@ class TarteelModelManager {
 
       if (await destination.exists()) await destination.delete();
       await partial.rename(destination.path);
+      await _removeLegacyBaseModel();
       _states.add(
         TarteelModelStatus(
           installed: true,
@@ -167,6 +169,22 @@ class TarteelModelManager {
       _downloading = false;
       client.close(force: true);
       _activeClient = null;
+    }
+  }
+
+  Future<void> _removeLegacyBaseModel() async {
+    final directory = await _modelDirectory();
+    const oldNames = [
+      'tarteel-whisper-base-ar-quran-q8_0.bin',
+      'tarteel-ai-whisper-base-ar-quran-ggml-q8_0.bin',
+    ];
+    for (final name in oldNames) {
+      final file = File('${directory.path}${Platform.pathSeparator}$name');
+      if (await file.exists()) {
+        try {
+          await file.delete();
+        } catch (_) {}
+      }
     }
   }
 
