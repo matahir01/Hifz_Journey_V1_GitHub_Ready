@@ -180,8 +180,6 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
     });
 
     try {
-      // Intentionally network-first. The user has explicitly chosen speed over
-      // offline recognition, so Android/Google may use internet processing.
       await recognizer.start(preferOnDevice: false);
     } catch (e) {
       if (!mounted) return;
@@ -282,26 +280,9 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
                             ),
                             const SizedBox(height: 18),
                             if (textHidden)
-                              SizedBox(
-                                height: 160,
-                                child: Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.visibility_off_outlined,
-                                        size: 48,
-                                        color: Theme.of(context).colorScheme.outline,
-                                      ),
-                                      const SizedBox(height: 10),
-                                      Text(
-                                        listening
-                                            ? 'Passage hidden — keep reciting'
-                                            : 'Passage hidden until you recite',
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                              _LiveReveal(
+                                comparison: comparison,
+                                listening: listening,
                               )
                             else
                               Text(
@@ -403,6 +384,98 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
                     ],
                   ],
                 ),
+    );
+  }
+}
+
+class _LiveReveal extends StatelessWidget {
+  final RecitationComparison? comparison;
+  final bool listening;
+
+  const _LiveReveal({required this.comparison, required this.listening});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    if (comparison == null || comparison!.words.isEmpty) {
+      return SizedBox(
+        height: 160,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.visibility_off_outlined,
+                size: 48,
+                color: scheme.outline,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                listening
+                    ? 'Passage hidden — recite to reveal each word'
+                    : 'Passage hidden until you recite',
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Wrap(
+      textDirection: TextDirection.rtl,
+      alignment: WrapAlignment.end,
+      spacing: 6,
+      runSpacing: 8,
+      children: comparison!.words.map((word) {
+        final isCorrect = word.state == WordAssessmentState.correct;
+        final isWrong = word.state == WordAssessmentState.substituted;
+        final isMissing = word.state == WordAssessmentState.missing;
+        final isPending = word.state == WordAssessmentState.pending;
+
+        final Color background;
+        final Color foreground;
+        final Border? border;
+
+        if (isCorrect) {
+          background = scheme.primaryContainer;
+          foreground = scheme.onPrimaryContainer;
+          border = null;
+        } else if (isWrong || isMissing) {
+          background = scheme.errorContainer;
+          foreground = scheme.onErrorContainer;
+          border = null;
+        } else {
+          background = Colors.transparent;
+          foreground = scheme.outline.withValues(alpha: .18);
+          border = Border.all(
+            color: scheme.outlineVariant.withValues(alpha: .12),
+          );
+        }
+
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(8),
+            border: border,
+          ),
+          child: Text(
+            word.expected,
+            textDirection: TextDirection.rtl,
+            style: TextStyle(
+              fontSize: 27,
+              height: 1.7,
+              color: foreground,
+              fontWeight: isCorrect ? FontWeight.w700 : FontWeight.normal,
+              decoration: (isWrong || isMissing) && !isPending
+                  ? TextDecoration.underline
+                  : null,
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }
