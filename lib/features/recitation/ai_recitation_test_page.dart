@@ -41,7 +41,10 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
   bool listening = false;
   bool saving = false;
   bool textHidden = true;
+  bool sessionStarted = false;
+  bool finalizing = false;
   String transcript = '';
+  String resumePrefix = '';
   String? error;
   RecitationComparison? liveComparison;
   RecitationComparison? finalComparison;
@@ -71,7 +74,7 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
     if (!mounted) return;
     if (!available) {
       setState(() {
-        error = 'Your phone speech-recognition service is unavailable. Make sure the Google app / Speech Services is enabled and microphone permission is allowed.';
+        error = 'Speech recognition is unavailable. Check microphone permission and your phone speech service.';
       });
     }
   }
@@ -110,6 +113,7 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
 
     setState(() {
       listening = state.listening;
+
       if (state.error != null && state.error!.isNotEmpty) {
         error = _friendlyError(state.error!);
       } else if (listening) {
@@ -117,15 +121,17 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
       }
 
       if (next.isNotEmpty) {
-        transcript = next;
+        transcript = _mergeTranscripts(resumePrefix, next);
         liveComparison = comparator.compare(
           expectedText: expectedText,
           transcript: transcript,
-          live: listening,
+          live: true,
         );
       }
 
-      if (!listening && transcript.isNotEmpty) {
+      // A platform speech session is allowed to end without ending the Hifz
+      // test. Only _finishSession() creates the final score.
+      if (finalizing && !state.listening && transcript.isNotEmpty) {
         finalComparison = comparator.compare(
           expectedText: expectedText,
           transcript: transcript,
@@ -134,49 +140,73 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
     });
   }
 
+  String _mergeTranscripts(String previous, String current) {
+    final oldWords = QuranTextNormalizer.words(previous);
+    final newWords = QuranTextNormalizer.words(current);
+    if (oldWords.isEmpty) return newWords.join(' ');
+    if (newWords.isEmpty) return oldWords.join(' ');
+
+    final maxOverlap = oldWords.length < newWords.length
+        ? oldWords.length
+        : newWords.length;
+    var overlap = 0;
+    for (var count = maxOverlap; count > 0; count--) {
+      var same = true;
+      for (var i = 0; i < count; i++) {
+        if (oldWords[oldWords.length - count + i] != newWords[i]) {
+          same = false;
+          break;
+        }
+      }
+      if (same) {
+        overlap = count;
+        break;
+      }
+    }
+
+    return <String>[
+      ...oldWords,
+      ...newWords.skip(overlap),
+    ].join(' ');
+  }
+
   String _friendlyError(String raw) {
     if (raw.contains('error_language_unavailable')) {
-      return 'Arabic is not available through Android speech recognition for this app, even though voice typing may work. Check that Arabic (Saudi Arabia) is enabled in Google voice settings and try again with internet access.';
+      return 'Arabic speech recognition is unavailable right now. Check your phone language settings and try again.';
     }
     if (raw.contains('error_network') || raw.contains('network')) {
-      return 'Speech recognition needs internet access right now. Check your connection and try again.';
+      return 'Speech recognition needs an internet connection. Check your connection and try again.';
     }
     if (raw.contains('permission')) {
-      return 'Microphone permission is required. Allow microphone access for Hifz Journey and try again.';
+      return 'Microphone permission is required to test your recitation.';
     }
     if (raw.contains('error_busy')) {
-      return 'The phone speech service is busy. Wait a moment and try again.';
+      return 'Speech recognition is reconnecting. Try again in a moment.';
     }
     if (raw.contains('error_no_match')) {
-      return 'I did not catch that clearly. Try reciting a little closer to the microphone.';
+      return 'I did not catch that clearly. Continue when you are ready.';
     }
     return raw;
   }
 
-  Future<void> _toggleListening() async {
-    if (ayahs.isEmpty) return;
+  Future<void> _startOrContinue() async {
+    if (ayahs.isEmpty || listening || finalizing) return;
 
-    if (listening) {
-      setState(() => listening = false);
-      await recognizer.stop();
-      if (!mounted) return;
-      if (transcript.isNotEmpty) {
-        setState(() {
-          finalComparison = comparator.compare(
-            expectedText: expectedText,
-            transcript: transcript,
-          );
-        });
-      }
-      return;
+    final continuing = sessionStarted && transcript.isNotEmpty;
+    if (!sessionStarted) {
+      transcript = '';
+      resumePrefix = '';
+      liveComparison = null;
+      finalComparison = null;
+      sessionStarted = true;
+    } else if (continuing) {
+      resumePrefix = transcript;
     }
 
     setState(() {
-      transcript = '';
       error = null;
-      liveComparison = null;
-      finalComparison = null;
       listening = true;
+      finalComparison = null;
     });
 
     try {
@@ -188,6 +218,45 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
         error = _friendlyError(e.toString());
       });
     }
+  }
+
+  Future<void> _finishSession() async {
+    if (!sessionStarted || finalizing) return;
+    setState(() {
+      finalizing = true;
+      listening = false;
+      error = null;
+    });
+
+    await recognizer.stop();
+    if (!mounted) return;
+
+    setState(() {
+      finalizing = false;
+      listening = false;
+      if (transcript.isNotEmpty) {
+        finalComparison = comparator.compare(
+          expectedText: expectedText,
+          transcript: transcript,
+        );
+      }
+    });
+  }
+
+  Future<void> _restartTest() async {
+    await recognizer.cancel();
+    if (!mounted) return;
+    setState(() {
+      listening = false;
+      sessionStarted = false;
+      finalizing = false;
+      transcript = '';
+      resumePrefix = '';
+      liveComparison = null;
+      finalComparison = null;
+      error = null;
+      textHidden = true;
+    });
   }
 
   Future<void> _saveResult() async {
@@ -231,8 +300,6 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
 
   @override
   Widget build(BuildContext context) {
-    final comparison = finalComparison ?? liveComparison;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title ?? 'Recitation test'),
@@ -251,7 +318,8 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
               : ListView(
                   padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
                   children: [
-                    if (widget.cueText != null && widget.cueText!.trim().isNotEmpty) ...[
+                    if (widget.cueText != null &&
+                        widget.cueText!.trim().isNotEmpty) ...[
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
@@ -281,7 +349,8 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
                             const SizedBox(height: 18),
                             if (textHidden)
                               _LiveReveal(
-                                comparison: comparison,
+                                comparison:
+                                    finalComparison ?? liveComparison,
                                 listening: listening,
                               )
                             else
@@ -304,25 +373,37 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
                           children: [
                             Row(
                               children: [
-                                Icon(listening
-                                    ? Icons.graphic_eq_rounded
-                                    : Icons.mic_none_rounded),
+                                Icon(
+                                  listening
+                                      ? Icons.graphic_eq_rounded
+                                      : sessionStarted && finalComparison == null
+                                          ? Icons.pause_circle_outline_rounded
+                                          : Icons.mic_none_rounded,
+                                ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  listening ? 'Listening live…' : 'Ready',
-                                  style: const TextStyle(fontWeight: FontWeight.w800),
+                                  listening
+                                      ? 'Listening…'
+                                      : sessionStarted && finalComparison == null
+                                          ? 'Paused'
+                                          : finalComparison != null
+                                              ? 'Completed'
+                                              : 'Ready',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 10),
-                            Text(
-                              transcript.isEmpty
-                                  ? 'Recognized Arabic words will appear immediately as you recite.'
-                                  : transcript,
-                              textDirection: TextDirection.rtl,
-                              textAlign: TextAlign.right,
-                              style: const TextStyle(fontSize: 19, height: 1.6),
-                            ),
+                            if (transcript.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                transcript,
+                                textDirection: TextDirection.rtl,
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(fontSize: 19, height: 1.6),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -342,44 +423,58 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
                       ),
                     ],
                     const SizedBox(height: 12),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Icon(Icons.cloud_outlined),
-                            SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Fast recognition uses your phone’s Arabic speech service and may use the internet. No Qur’an AI model download is required.',
-                              ),
-                            ),
-                          ],
+                    if (finalComparison == null) ...[
+                      if (listening)
+                        FilledButton.icon(
+                          onPressed: _finishSession,
+                          icon: const Icon(Icons.stop_rounded),
+                          label: const Text('Finish recitation'),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(56),
+                          ),
+                        )
+                      else ...[
+                        FilledButton.icon(
+                          onPressed: finalizing ? null : _startOrContinue,
+                          icon: const Icon(Icons.mic_rounded),
+                          label: Text(
+                            sessionStarted && transcript.isNotEmpty
+                                ? 'Continue reciting'
+                                : 'Start reciting',
+                          ),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(56),
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: _toggleListening,
-                      icon: Icon(listening ? Icons.stop_rounded : Icons.mic_rounded),
-                      label: Text(listening ? 'Finish recitation' : 'Start reciting'),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(56),
-                      ),
-                    ),
-                    if (comparison != null) ...[
-                      const SizedBox(height: 16),
-                      _ResultCard(comparison: comparison),
+                        if (sessionStarted && transcript.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: finalizing ? null : _finishSession,
+                            icon: const Icon(Icons.check_rounded),
+                            label: const Text('Finish with current progress'),
+                          ),
+                        ],
+                      ],
                     ],
                     if (finalComparison != null) ...[
+                      const SizedBox(height: 16),
+                      _ResultCard(comparison: finalComparison!),
                       const SizedBox(height: 12),
                       FilledButton.icon(
                         onPressed: saving ? null : _saveResult,
                         icon: const Icon(Icons.save_outlined),
-                        label: Text(saving
-                            ? 'Saving…'
-                            : 'Save result & schedule revision'),
+                        label: Text(
+                          saving ? 'Saving…' : 'Save result',
+                        ),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: saving ? null : _restartTest,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Try again'),
                       ),
                     ],
                   ],
@@ -400,22 +495,20 @@ class _LiveReveal extends StatelessWidget {
 
     if (comparison == null || comparison!.words.isEmpty) {
       return SizedBox(
-        height: 160,
+        height: 150,
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 Icons.visibility_off_outlined,
-                size: 48,
+                size: 46,
                 color: scheme.outline,
               ),
               const SizedBox(height: 10),
-              Text(
-                listening
-                    ? 'Passage hidden — recite to reveal each word'
-                    : 'Passage hidden until you recite',
-              ),
+              Text(listening
+                  ? 'Recite to reveal each word'
+                  : 'Passage hidden until you recite'),
             ],
           ),
         ),
@@ -431,7 +524,6 @@ class _LiveReveal extends StatelessWidget {
         final isCorrect = word.state == WordAssessmentState.correct;
         final isWrong = word.state == WordAssessmentState.substituted;
         final isMissing = word.state == WordAssessmentState.missing;
-        final isPending = word.state == WordAssessmentState.pending;
 
         final Color background;
         final Color foreground;
@@ -469,7 +561,7 @@ class _LiveReveal extends StatelessWidget {
               height: 1.7,
               color: foreground,
               fontWeight: isCorrect ? FontWeight.w700 : FontWeight.normal,
-              decoration: (isWrong || isMissing) && !isPending
+              decoration: isWrong || isMissing
                   ? TextDecoration.underline
                   : null,
             ),
@@ -529,11 +621,6 @@ class _ResultCard extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'This grades memorized text accuracy, not tajwid or makhraj.',
-              textAlign: TextAlign.center,
             ),
           ],
         ),
