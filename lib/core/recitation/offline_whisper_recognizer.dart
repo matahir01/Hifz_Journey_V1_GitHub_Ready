@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:record/record.dart';
 import 'package:whisper_ggml/whisper_ggml.dart';
 
+import 'recitation_recognizer.dart';
 import 'tarteel_model_manager.dart';
 
 class RecitationRecognizerState {
@@ -16,18 +17,33 @@ class RecitationRecognizerState {
   });
 }
 
-/// On-device Qur'an recitation recognizer backed by the Tarteel-tuned Whisper
-/// Base model converted to GGML q8_0 for whisper.cpp.
+/// Hybrid Qur'an recitation recognizer.
+///
+/// The fast path uses Android/iOS system speech recognition with online Arabic
+/// recognition enabled. This gives immediate partial results on phones whose
+/// Google speech service supports Arabic. If the system recognizer is
+/// unavailable or reports a language/service error, the app transparently
+/// falls back to the downloaded Qur'an-tuned Whisper model.
+///
+/// Whisper remains the privacy/offline fallback; the expected ayah text is not
+/// supplied to either recognizer as a prompt so recall scores are not inflated.
 class OfflineWhisperRecitationRecognizer {
   final AudioRecorder _recorder = AudioRecorder();
   final WhisperController _whisper = WhisperController();
+  final DeviceArabicRecitationRecognizer _device =
+      DeviceArabicRecitationRecognizer();
   final TarteelModelManager modelManager;
   final StreamController<RecitationRecognizerState> _states =
       StreamController<RecitationRecognizerState>.broadcast();
 
   WhisperLiveSession? _session;
   StreamSubscription<String>? _partialSubscription;
+  StreamSubscription<RecitationRecognitionState>? _deviceSubscription;
+
   bool _listening = false;
+  bool _usingDevice = false;
+  bool _switchingRecognizer = false;
+  bool _stopping = false;
   String _latest = '';
 
   OfflineWhisperRecitationRecognizer({TarteelModelManager? modelManager})
@@ -37,8 +53,85 @@ class OfflineWhisperRecitationRecognizer {
   bool get isListening => _listening;
   String get latestTranscript => _latest;
 
+  void _emit() {
+    if (_states.isClosed) return;
+    _states.add(
+      RecitationRecognizerState(
+        transcript: _latest,
+        listening: _listening,
+      ),
+    );
+  }
+
   Future<void> start({String? initialPrompt}) async {
-    if (_listening) return;
+    if (_listening || _switchingRecognizer) return;
+
+    _latest = '';
+    _stopping = false;
+
+    // Prefer Google's normal/network Arabic recognizer. The previous build
+    // requested on-device Arabic first; on some Android phones that produces
+    // error_language_unavailable even though Arabic voice typing works in
+    // Gboard. Using onDevice:false intentionally avoids that mismatch.
+    try {
+      final available = await _device.initialize();
+      if (available) {
+        await _deviceSubscription?.cancel();
+        _deviceSubscription = _device.states.listen(_onDeviceState);
+        _usingDevice = true;
+        _listening = true;
+        _emit();
+        await _device.start(preferOnDevice: false);
+        return;
+      }
+    } catch (_) {
+      // Fall through to the Qur'an Whisper recognizer below.
+    }
+
+    await _startWhisper(initialPrompt: initialPrompt);
+  }
+
+  void _onDeviceState(RecitationRecognitionState state) {
+    if (_stopping || !_usingDevice) return;
+
+    final next = state.transcript.trim();
+    if (next.isNotEmpty && next != _latest) {
+      _latest = next;
+    }
+
+    final message = state.error?.toLowerCase() ?? '';
+    if (message.isNotEmpty) {
+      final shouldFallback =
+          message.contains('language_unavailable') ||
+          message.contains('language_not_supported') ||
+          message.contains('error_client') ||
+          message.contains('error_network') ||
+          message.contains('error_server');
+      if (shouldFallback) {
+        unawaited(_switchToWhisper());
+        return;
+      }
+    }
+
+    _listening = state.listening;
+    _emit();
+  }
+
+  Future<void> _switchToWhisper() async {
+    if (_switchingRecognizer || _stopping || !_usingDevice) return;
+    _switchingRecognizer = true;
+    try {
+      await _device.cancel();
+      _usingDevice = false;
+      _listening = false;
+      _emit();
+      await _startWhisper();
+    } finally {
+      _switchingRecognizer = false;
+    }
+  }
+
+  Future<void> _startWhisper({String? initialPrompt}) async {
     if (!await _recorder.hasPermission()) {
       throw StateError('Microphone permission was not granted.');
     }
@@ -52,7 +145,6 @@ class OfflineWhisperRecitationRecognizer {
       ),
     );
 
-    _latest = '';
     try {
       _session = await _whisper.transcribeLive(
         modelPath: modelPath,
@@ -70,55 +162,84 @@ class OfflineWhisperRecitationRecognizer {
       rethrow;
     }
 
+    await _partialSubscription?.cancel();
     _partialSubscription = _session!.partials.listen((text) {
       final next = text.trim();
-      if (next == _latest) return;
+      if (next == _latest || next.isEmpty) return;
       _latest = next;
-      _states.add(
-        RecitationRecognizerState(transcript: _latest, listening: true),
-      );
+      _emit();
     });
+
+    _usingDevice = false;
     _listening = true;
-    _states.add(
-      const RecitationRecognizerState(transcript: '', listening: true),
-    );
+    _emit();
   }
 
   Future<String> stop() async {
-    if (!_listening) return _latest;
-    await _recorder.stop();
-    final value = await _session!.stop();
-    final finalText = value.trim();
-    if (finalText.isNotEmpty) _latest = finalText;
-    await _partialSubscription?.cancel();
-    _partialSubscription = null;
-    _session = null;
-    _listening = false;
-    _states.add(
-      RecitationRecognizerState(transcript: _latest, listening: false),
-    );
-    return _latest;
+    if (!_listening && !_usingDevice) return _latest;
+    _stopping = true;
+
+    try {
+      if (_usingDevice) {
+        await _device.stop();
+        _usingDevice = false;
+        final finalText = _device.state.transcript.trim();
+        if (finalText.isNotEmpty) _latest = finalText;
+        _listening = false;
+        _emit();
+        return _latest;
+      }
+
+      await _recorder.stop();
+      final session = _session;
+      if (session != null) {
+        final value = await session.stop();
+        final finalText = value.trim();
+        if (finalText.isNotEmpty) _latest = finalText;
+      }
+      await _partialSubscription?.cancel();
+      _partialSubscription = null;
+      _session = null;
+      _listening = false;
+      _emit();
+      return _latest;
+    } finally {
+      _stopping = false;
+    }
   }
 
   Future<void> cancel() async {
-    if (_listening) {
-      await _recorder.cancel();
-      try {
-        await _session?.stop();
-      } catch (_) {}
+    _stopping = true;
+    try {
+      if (_usingDevice) {
+        await _device.cancel();
+      }
+      _usingDevice = false;
+
+      if (_session != null || _listening) {
+        try {
+          await _recorder.cancel();
+        } catch (_) {}
+        try {
+          await _session?.stop();
+        } catch (_) {}
+      }
+
+      await _partialSubscription?.cancel();
+      _partialSubscription = null;
+      _session = null;
+      _listening = false;
+      _latest = '';
+      _emit();
+    } finally {
+      _stopping = false;
     }
-    await _partialSubscription?.cancel();
-    _partialSubscription = null;
-    _session = null;
-    _listening = false;
-    _latest = '';
-    _states.add(
-      const RecitationRecognizerState(transcript: '', listening: false),
-    );
   }
 
   Future<void> dispose() async {
     await cancel();
+    await _deviceSubscription?.cancel();
+    await _device.dispose();
     await _whisper.releaseModel();
     await _recorder.dispose();
     await modelManager.dispose();
