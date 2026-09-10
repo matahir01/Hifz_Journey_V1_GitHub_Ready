@@ -1,13 +1,25 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/audio/audio_library_service.dart';
+import '../../core/audio/audio_reciter.dart';
+import '../../core/audio/audio_service.dart';
 import '../../data/models/ayah.dart';
 import '../../data/models/surah.dart';
 import '../../data/repositories/quran_repository.dart';
+import '../shell/app_controller.dart';
 
 class MushafPage extends StatefulWidget {
   final int initialPage;
-  const MushafPage({super.key, this.initialPage = 1});
+  final int? initialAyahId;
+
+  const MushafPage({
+    super.key,
+    this.initialPage = 1,
+    this.initialAyahId,
+  });
 
   @override
   State<MushafPage> createState() => _MushafPageState();
@@ -16,17 +28,29 @@ class MushafPage extends StatefulWidget {
 class _MushafPageState extends State<MushafPage> {
   late int page;
   late Future<_MushafData> data;
+  late final QuranAudioService audio;
+  StreamSubscription<int?>? audioSubscription;
+
+  int? selectedAyahId;
+  int? activeAyahId;
+  bool playing = false;
+  bool downloading = false;
+  int repeat = 1;
+  double speed = 1.0;
 
   @override
   void initState() {
     super.initState();
     page = widget.initialPage.clamp(1, 604).toInt();
-    data = _load();
+    selectedAyahId = widget.initialAyahId;
+    data = _loadForPage(page);
+    audio = QuranAudioService();
+    audioSubscription = audio.activeAyahIdStream.listen(_onActiveAyah);
   }
 
-  Future<_MushafData> _load() async {
+  Future<_MushafData> _loadForPage(int value) async {
     final quran = context.read<QuranRepository>();
-    final ayahs = await quran.ayahsForPage(page);
+    final ayahs = await quran.ayahsForPage(value);
     final ids = ayahs.map((a) => a.surahId).toSet();
     final surahs = <int, Surah>{};
     for (final id in ids) {
@@ -36,16 +60,136 @@ class _MushafPageState extends State<MushafPage> {
     return _MushafData(ayahs, surahs);
   }
 
-  void _go(int value) {
+  Future<void> _onActiveAyah(int? id) async {
+    if (!mounted) return;
+    setState(() => activeAyahId = id);
+    if (id == null) return;
+
+    final ayah = await context.read<QuranRepository>().ayah(id);
+    if (ayah == null || !mounted) return;
+
+    selectedAyahId = ayah.id;
+    await context.read<QuranRepository>().saveReadingProgress(ayah);
+
+    if (ayah.page != page && mounted) {
+      setState(() {
+        page = ayah.page.clamp(1, 604).toInt();
+        data = _loadForPage(page);
+      });
+    }
+  }
+
+  Future<void> _go(int value) async {
+    if (playing) {
+      await audio.stop();
+    }
+    final next = value.clamp(1, 604).toInt();
+    final quran = context.read<QuranRepository>();
+    final first = await quran.firstAyahOfPage(next);
+    if (!mounted) return;
     setState(() {
-      page = value.clamp(1, 604).toInt();
-      data = _load();
+      playing = false;
+      activeAyahId = null;
+      page = next;
+      selectedAyahId = first?.id;
+      data = _loadForPage(page);
     });
+    if (first != null) {
+      await quran.saveReadingProgress(first);
+      if (mounted) await context.read<AppController>().refresh();
+    }
+  }
+
+  Ayah _startAyah(_MushafData value) {
+    if (selectedAyahId != null) {
+      for (final ayah in value.ayahs) {
+        if (ayah.id == selectedAyahId) return ayah;
+      }
+    }
+    return value.ayahs.first;
+  }
+
+  Future<void> _togglePlayback(_MushafData value) async {
+    if (playing) {
+      await audio.stop();
+      if (mounted) setState(() => playing = false);
+      return;
+    }
+    if (value.ayahs.isEmpty) return;
+
+    final start = _startAyah(value);
+    final all = await context.read<QuranRepository>().ayahsForSurah(start.surahId);
+    final startIndex = all.indexWhere((ayah) => ayah.id == start.id);
+    if (startIndex < 0 || !mounted) return;
+
+    final controller = context.read<AppController>();
+    final library = context.read<AudioLibraryService>();
+    setState(() => playing = true);
+    try {
+      await audio.playSequence(
+        all,
+        reciter: controller.reciter,
+        library: library,
+        repeatEach: repeat,
+        speed: speed,
+        startIndex: startIndex,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Playback stopped. Check your connection or downloaded audio. $e',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => playing = false);
+    }
+  }
+
+  Future<void> _downloadCurrentSurah(_MushafData value) async {
+    if (value.ayahs.isEmpty || downloading) return;
+    final start = _startAyah(value);
+    final quran = context.read<QuranRepository>();
+    final ayahs = await quran.ayahsForSurah(start.surahId);
+    final controller = context.read<AppController>();
+    final library = context.read<AudioLibraryService>();
+
+    if (mounted) setState(() => downloading = true);
+    try {
+      for (final ayah in ayahs) {
+        await library.downloadAyah(ayah, reciter: controller.reciter);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Surah ${start.surahId} audio saved offline.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Download failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => downloading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    audioSubscription?.cancel();
+    audio.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final controller = context.watch<AppController>();
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Mushaf · Page $page'),
@@ -73,6 +217,7 @@ class _MushafPageState extends State<MushafPage> {
           if (value.ayahs.isEmpty) {
             return const Center(child: Text('No text found for this page.'));
           }
+
           return SafeArea(
             top: false,
             child: Column(
@@ -107,8 +252,26 @@ class _MushafPageState extends State<MushafPage> {
                     ),
                   ),
                 ),
+                _AudioControls(
+                  reciter: controller.reciter,
+                  playing: playing,
+                  downloading: downloading,
+                  repeat: repeat,
+                  speed: speed,
+                  onPlay: () => _togglePlayback(value),
+                  onDownload: () => _downloadCurrentSurah(value),
+                  onRepeatChanged: playing
+                      ? null
+                      : (v) => setState(() => repeat = v),
+                  onSpeedChanged: playing
+                      ? null
+                      : (v) => setState(() => speed = v),
+                  onReciterChanged: playing
+                      ? null
+                      : (id) => context.read<AppController>().setReciter(id),
+                ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
+                  padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
                   child: Row(
                     children: [
                       Expanded(
@@ -120,12 +283,18 @@ class _MushafPageState extends State<MushafPage> {
                       ),
                       const SizedBox(width: 10),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: scheme.surfaceContainerLow,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Text('$page', style: const TextStyle(fontWeight: FontWeight.w800)),
+                        child: Text(
+                          '$page',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -153,7 +322,12 @@ class _MushafPageState extends State<MushafPage> {
 
     void flush() {
       if (buffer.isEmpty) return;
-      widgets.add(_AyahBlock(ayahs: List<Ayah>.from(buffer)));
+      widgets.add(
+        _AyahBlock(
+          ayahs: List<Ayah>.from(buffer),
+          activeAyahId: activeAyahId,
+        ),
+      );
       buffer.clear();
     }
 
@@ -176,14 +350,144 @@ class _MushafPageState extends State<MushafPage> {
   }
 }
 
+class _AudioControls extends StatelessWidget {
+  final AudioReciter reciter;
+  final bool playing;
+  final bool downloading;
+  final int repeat;
+  final double speed;
+  final VoidCallback onPlay;
+  final VoidCallback onDownload;
+  final ValueChanged<int>? onRepeatChanged;
+  final ValueChanged<double>? onSpeedChanged;
+  final ValueChanged<String>? onReciterChanged;
+
+  const _AudioControls({
+    required this.reciter,
+    required this.playing,
+    required this.downloading,
+    required this.repeat,
+    required this.speed,
+    required this.onPlay,
+    required this.onDownload,
+    required this.onRepeatChanged,
+    required this.onSpeedChanged,
+    required this.onReciterChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                IconButton.filled(
+                  tooltip: playing ? 'Stop' : 'Play from here',
+                  onPressed: onPlay,
+                  icon: Icon(playing ? Icons.stop : Icons.play_arrow),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: reciter.id,
+                      isExpanded: true,
+                      items: AudioReciters.all
+                          .map(
+                            (item) => DropdownMenuItem(
+                              value: item.id,
+                              child: Text(
+                                item.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: onReciterChanged == null
+                          ? null
+                          : (value) {
+                              if (value != null) onReciterChanged!(value);
+                            },
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Download current Surah',
+                  onPressed: downloading ? null : onDownload,
+                  icon: downloading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download_for_offline_outlined),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                const Text('Repeat'),
+                const SizedBox(width: 6),
+                DropdownButton<int>(
+                  value: repeat,
+                  underline: const SizedBox.shrink(),
+                  items: const [1, 3, 5, 10]
+                      .map(
+                        (n) => DropdownMenuItem(value: n, child: Text('×$n')),
+                      )
+                      .toList(),
+                  onChanged: onRepeatChanged == null
+                      ? null
+                      : (v) {
+                          if (v != null) onRepeatChanged!(v);
+                        },
+                ),
+                const Spacer(),
+                const Text('Speed'),
+                const SizedBox(width: 6),
+                DropdownButton<double>(
+                  value: speed,
+                  underline: const SizedBox.shrink(),
+                  items: const [0.75, 1.0, 1.25]
+                      .map(
+                        (n) => DropdownMenuItem(
+                          value: n,
+                          child: Text('${n}×'),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: onSpeedChanged == null
+                      ? null
+                      : (v) {
+                          if (v != null) onSpeedChanged!(v);
+                        },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _MushafData {
   final List<Ayah> ayahs;
   final Map<int, Surah> surahs;
+
   const _MushafData(this.ayahs, this.surahs);
 }
 
 class _SurahHeader extends StatelessWidget {
   final Surah surah;
+
   const _SurahHeader({required this.surah});
 
   @override
@@ -223,6 +527,7 @@ class _SurahHeader extends StatelessWidget {
 
 class _Bismillah extends StatelessWidget {
   const _Bismillah();
+
   @override
   Widget build(BuildContext context) {
     return const Padding(
@@ -245,23 +550,39 @@ class _Bismillah extends StatelessWidget {
 
 class _AyahBlock extends StatelessWidget {
   final List<Ayah> ayahs;
-  const _AyahBlock({required this.ayahs});
+  final int? activeAyahId;
+
+  const _AyahBlock({required this.ayahs, required this.activeAyahId});
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: SelectableText.rich(
         TextSpan(
           children: [
             for (final ayah in ayahs) ...[
-              TextSpan(text: ayah.textUthmani),
+              TextSpan(
+                text: ayah.textUthmani,
+                style: TextStyle(
+                  backgroundColor: activeAyahId == ayah.id
+                      ? scheme.primaryContainer
+                      : null,
+                  fontWeight: activeAyahId == ayah.id
+                      ? FontWeight.w700
+                      : FontWeight.normal,
+                ),
+              ),
               TextSpan(
                 text: '  ﴿${_arabicDigits(ayah.ayahNumber)}﴾  ',
                 style: TextStyle(
                   fontSize: 20,
-                  color: Theme.of(context).colorScheme.primary,
+                  color: scheme.primary,
                   fontWeight: FontWeight.w700,
+                  backgroundColor: activeAyahId == ayah.id
+                      ? scheme.primaryContainer
+                      : null,
                 ),
               ),
             ],
