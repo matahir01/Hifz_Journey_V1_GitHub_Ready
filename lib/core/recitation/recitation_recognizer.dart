@@ -56,11 +56,10 @@ abstract class RecitationRecognizer {
 
 /// Fast Android/iOS Arabic recognizer.
 ///
-/// Hifz Journey deliberately uses the normal network-backed speech service by
-/// default. The recognizer also verifies that returned text is actually Arabic
-/// script. Some Android speech providers silently fall back to English and
-/// return transliteration such as "alhamdulillah"; those results are rejected
-/// and another Arabic locale is tried automatically.
+/// Uses the normal network-backed speech service by default. Android speech
+/// providers often end an individual recognition session after a pause or a
+/// short internal limit, so Hifz Journey treats those endings as segments and
+/// silently opens the next segment while the user is still in the same test.
 class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final _controller =
@@ -77,6 +76,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
   final List<String> _segments = <String>[];
   String _currentSegment = '';
   Timer? _restartTimer;
+  int _busyRetries = 0;
 
   @override
   Stream<RecitationRecognitionState> get states => _controller.stream;
@@ -123,8 +123,6 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
       }
     }
 
-    // Saudi Arabic first because it matches the user's Google voice setting
-    // and is the most natural default for Qur'an recitation.
     for (final preferred in const [
       'ar_SA',
       'ar_EG',
@@ -146,8 +144,6 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
       }
     }
 
-    // Some Android recognizers accept ar-SA even when locales() does not list
-    // it. Keeping this explicit fallback prevents accidental English default.
     if (_arabicLocales.isEmpty) _arabicLocales.add('ar-SA');
     _localeIndex = 0;
   }
@@ -157,20 +153,63 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     final available = await _speech.initialize(
       onError: (error) {
         final message = error.errorMsg;
-        if (message == 'error_no_match' && _keepListening) {
-          _scheduleRestart();
+
+        if (!_keepListening) {
+          _emit(_state.copyWith(listening: false, error: message));
           return;
         }
+
+        // Android can report BUSY when a replacement recognition session is
+        // opened before the previous one has fully released the microphone.
+        // This is recoverable and should be invisible to the user.
+        if (message == 'error_busy') {
+          _busyRetries++;
+          _emit(_state.copyWith(
+            listening: true,
+            transcript: _combinedTranscript,
+            clearError: true,
+          ));
+          _scheduleRestart(
+            delay: Duration(milliseconds: 900 + (_busyRetries * 350)),
+            releaseRecognizerFirst: true,
+          );
+          return;
+        }
+
+        if (message == 'error_no_match' || message == 'error_speech_timeout') {
+          _emit(_state.copyWith(
+            listening: true,
+            transcript: _combinedTranscript,
+            clearError: true,
+          ));
+          _scheduleRestart(
+            delay: const Duration(milliseconds: 750),
+            releaseRecognizerFirst: true,
+          );
+          return;
+        }
+
         _emit(_state.copyWith(
-          listening: false,
+          listening: true,
+          transcript: _combinedTranscript,
           error: message,
         ));
-        if (_keepListening) _scheduleRestart();
+        _scheduleRestart(
+          delay: const Duration(milliseconds: 1100),
+          releaseRecognizerFirst: true,
+        );
       },
       onStatus: (status) {
-        if ((status == 'done' || status == 'notListening') &&
-            _keepListening) {
-          _scheduleRestart();
+        if (!_keepListening) return;
+        if (status == 'done' || status == 'notListening') {
+          // Do not change the app UI to Ready here. The platform session ended,
+          // but the Hifz recitation session is still active and will continue.
+          _emit(_state.copyWith(
+            listening: true,
+            transcript: _combinedTranscript,
+            clearError: true,
+          ));
+          _scheduleRestart(delay: const Duration(milliseconds: 800));
         }
       },
     );
@@ -184,18 +223,39 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     return available;
   }
 
-  void _scheduleRestart() {
+  void _scheduleRestart({
+    Duration delay = const Duration(milliseconds: 800),
+    bool releaseRecognizerFirst = false,
+  }) {
     if (!_keepListening || _starting || _switchingLocale) return;
     _restartTimer?.cancel();
-    _restartTimer = Timer(const Duration(milliseconds: 250), () async {
+    _restartTimer = Timer(delay, () async {
       if (!_keepListening) return;
+
+      if (releaseRecognizerFirst) {
+        try {
+          await _speech.cancel().timeout(const Duration(milliseconds: 900));
+        } catch (_) {}
+        if (!_keepListening) return;
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+      }
+
+      // A provider may still report itself as listening briefly after a status
+      // callback. Give it time to relinquish the microphone rather than racing
+      // it and producing error_busy.
+      if (_speech.isListening) {
+        _scheduleRestart(delay: const Duration(milliseconds: 650));
+        return;
+      }
+
       try {
         await _begin(onDevice: false);
       } catch (e) {
-        _emit(_state.copyWith(
-          listening: false,
-          error: e.toString(),
-        ));
+        if (!_keepListening) return;
+        _scheduleRestart(
+          delay: const Duration(milliseconds: 1200),
+          releaseRecognizerFirst: true,
+        );
       }
     });
   }
@@ -218,10 +278,10 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     try {
       await _speech.cancel().timeout(const Duration(seconds: 1));
     } catch (_) {}
+    await Future<void>.delayed(const Duration(milliseconds: 450));
     _switchingLocale = false;
 
     if (_keepListening) {
-      await Future<void>.delayed(const Duration(milliseconds: 180));
       await _begin(onDevice: false);
     }
   }
@@ -241,17 +301,13 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
           final looksLatinOnly = !isArabic && _containsLatinLetters(raw);
 
           if (looksLatinOnly) {
-            // Do not display or grade transliteration as if it were Qur'an
-            // Arabic. Wait for a final result before changing locale so that a
-            // temporary partial hypothesis does not interrupt the user.
-            if (result.finalResult) {
-              unawaited(_tryNextArabicLocale());
-            }
+            if (result.finalResult) unawaited(_tryNextArabicLocale());
             return;
           }
 
           if (!isArabic) return;
 
+          _busyRetries = 0;
           _currentSegment = raw;
 
           if (result.finalResult) {
@@ -269,7 +325,9 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
           ));
         },
         listenFor: const Duration(minutes: 5),
-        pauseFor: const Duration(seconds: 4),
+        // A longer pause window reduces premature session termination during
+        // natural breathing or hesitation in memorized recitation.
+        pauseFor: const Duration(seconds: 12),
         localeId: _activeLocale,
         partialResults: true,
         cancelOnError: false,
@@ -304,6 +362,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     _segments.clear();
     _currentSegment = '';
     _localeIndex = 0;
+    _busyRetries = 0;
     _keepListening = true;
     _emit(_state.copyWith(
       listening: true,
@@ -316,12 +375,9 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
       try {
         await _begin(onDevice: true);
         return;
-      } catch (_) {
-        // Continue to the normal internet-backed recognizer below.
-      }
+      } catch (_) {}
     }
 
-    // Network recognition is intentional for speed and quality.
     await _begin(onDevice: false);
   }
 
@@ -331,9 +387,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     _restartTimer?.cancel();
     try {
       await _speech.stop().timeout(const Duration(seconds: 2));
-    } catch (_) {
-      // Preserve the latest Arabic partial result rather than making Stop hang.
-    }
+    } catch (_) {}
     _emit(_state.copyWith(
       listening: false,
       transcript: _combinedTranscript,
