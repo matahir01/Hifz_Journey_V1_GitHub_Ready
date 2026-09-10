@@ -17,7 +17,8 @@ class RecitationRecognitionState {
     this.error,
   });
 
-  factory RecitationRecognitionState.initial() => const RecitationRecognitionState(
+  factory RecitationRecognitionState.initial() =>
+      const RecitationRecognitionState(
         available: false,
         listening: false,
         transcript: '',
@@ -47,24 +48,31 @@ abstract class RecitationRecognizer {
   RecitationRecognitionState get state;
 
   Future<bool> initialize();
-  Future<void> start({bool preferOnDevice = true});
+  Future<void> start({bool preferOnDevice = false});
   Future<void> stop();
   Future<void> cancel();
   Future<void> dispose();
 }
 
-/// Free baseline recognizer using Android/iOS speech recognition.
+/// Fast recognizer using Android/iOS speech recognition.
 ///
-/// On-device recognition is requested when the platform supports it. Some
-/// devices may fall back to their speech service. The rest of Hifz Journey is
-/// deliberately isolated behind [RecitationRecognizer] so a Quran-specialized
-/// Whisper/Tarteel model can replace this adapter without changing the test UI
-/// or retention engine.
+/// Hifz Journey deliberately requests the normal network-backed recognizer by
+/// default. This matches the path that usually powers fast Arabic voice typing
+/// on Android. Long recitations are handled by automatically reopening the
+/// recognizer when the speech service ends a segment.
 class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
   final stt.SpeechToText _speech = stt.SpeechToText();
-  final _controller = StreamController<RecitationRecognitionState>.broadcast();
-  RecitationRecognitionState _state = RecitationRecognitionState.initial();
+  final _controller =
+      StreamController<RecitationRecognitionState>.broadcast();
+
+  RecitationRecognitionState _state =
+      RecitationRecognitionState.initial();
   String? _arabicLocale;
+  bool _keepListening = false;
+  bool _starting = false;
+  final List<String> _segments = <String>[];
+  String _currentSegment = '';
+  Timer? _restartTimer;
 
   @override
   Stream<RecitationRecognitionState> get states => _controller.stream;
@@ -77,22 +85,36 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     if (!_controller.isClosed) _controller.add(value);
   }
 
+  String get _combinedTranscript {
+    final values = <String>[..._segments];
+    final current = _currentSegment.trim();
+    if (current.isNotEmpty) values.add(current);
+    return values.join(' ').trim();
+  }
+
   @override
   Future<bool> initialize() async {
     final available = await _speech.initialize(
       onError: (error) {
+        final message = error.errorMsg;
+        if (message == 'error_no_match' && _keepListening) {
+          _scheduleRestart();
+          return;
+        }
         _emit(_state.copyWith(
           listening: false,
-          error: error.errorMsg,
+          error: message,
         ));
+        if (_keepListening) _scheduleRestart();
       },
       onStatus: (status) {
-        final listening = status == 'listening';
-        if (_state.listening != listening) {
-          _emit(_state.copyWith(listening: listening));
+        if ((status == 'done' || status == 'notListening') &&
+            _keepListening) {
+          _scheduleRestart();
         }
       },
     );
+
     if (available) {
       final locales = await _speech.locales();
       for (final locale in locales) {
@@ -106,70 +128,135 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
         }
       }
     }
+
     _emit(_state.copyWith(available: available, clearError: true));
     return available;
   }
 
-  @override
-  Future<void> start({bool preferOnDevice = true}) async {
-    if (!_state.available) {
-      final ok = await initialize();
-      if (!ok) return;
-    }
-    _emit(_state.copyWith(
-      listening: true,
-      transcript: '',
-      confidence: 0,
-      clearError: true,
-    ));
-    Future<void> begin(bool onDevice) async {
+  void _scheduleRestart() {
+    if (!_keepListening || _starting) return;
+    _restartTimer?.cancel();
+    _restartTimer = Timer(const Duration(milliseconds: 250), () async {
+      if (!_keepListening) return;
+      try {
+        await _begin(onDevice: false);
+      } catch (e) {
+        _emit(_state.copyWith(
+          listening: false,
+          error: e.toString(),
+        ));
+      }
+    });
+  }
+
+  Future<void> _begin({required bool onDevice}) async {
+    if (_starting || !_keepListening) return;
+    _starting = true;
+    _currentSegment = '';
+    try {
       await _speech.listen(
         onResult: (result) {
+          _currentSegment = result.recognizedWords.trim();
+
+          if (result.finalResult && _currentSegment.isNotEmpty) {
+            final last = _segments.isEmpty ? null : _segments.last;
+            if (last != _currentSegment) _segments.add(_currentSegment);
+            _currentSegment = '';
+          }
+
           _emit(_state.copyWith(
-            listening: !result.finalResult,
-            transcript: result.recognizedWords,
-            confidence: result.hasConfidenceRating ? result.confidence : 0,
+            listening: _keepListening,
+            transcript: _combinedTranscript,
+            confidence:
+                result.hasConfidenceRating ? result.confidence : 0,
             clearError: true,
           ));
         },
-        listenFor: const Duration(seconds: 90),
-        pauseFor: const Duration(seconds: 5),
+        listenFor: const Duration(minutes: 5),
+        pauseFor: const Duration(seconds: 4),
         localeId: _arabicLocale,
         partialResults: true,
         cancelOnError: false,
         onDevice: onDevice,
         listenMode: stt.ListenMode.dictation,
       );
+      _emit(_state.copyWith(
+        listening: true,
+        transcript: _combinedTranscript,
+        clearError: true,
+      ));
+    } finally {
+      _starting = false;
     }
+  }
 
-    try {
-      await begin(preferOnDevice);
-    } catch (error) {
-      if (!preferOnDevice) rethrow;
-      // Some Android speech services support Arabic but do not expose an
-      // offline model. Fall back to the device's normal recognizer instead of
-      // failing the Hifz session completely.
-      try {
-        await begin(false);
-      } catch (fallbackError) {
+  @override
+  Future<void> start({bool preferOnDevice = false}) async {
+    if (!_state.available) {
+      final ok = await initialize();
+      if (!ok) {
         _emit(_state.copyWith(
           listening: false,
-          error: '$fallbackError',
+          error: 'Speech recognition is unavailable on this device.',
         ));
+        return;
       }
     }
+
+    _restartTimer?.cancel();
+    _segments.clear();
+    _currentSegment = '';
+    _keepListening = true;
+    _emit(_state.copyWith(
+      listening: true,
+      transcript: '',
+      confidence: 0,
+      clearError: true,
+    ));
+
+    // Network-backed recognition is intentional. If the caller explicitly
+    // asks for on-device recognition, try it once and fall back to network.
+    if (preferOnDevice) {
+      try {
+        await _begin(onDevice: true);
+        return;
+      } catch (_) {
+        // Continue to the normal online recognizer below.
+      }
+    }
+    await _begin(onDevice: false);
   }
 
   @override
   Future<void> stop() async {
-    await _speech.stop();
-    _emit(_state.copyWith(listening: false));
+    _keepListening = false;
+    _restartTimer?.cancel();
+    try {
+      await _speech.stop().timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // Preserve the partial transcript instead of making Stop feel stuck.
+    }
+    _emit(_state.copyWith(
+      listening: false,
+      transcript: _combinedTranscript,
+      clearError: true,
+    ));
   }
 
   @override
   Future<void> cancel() async {
-    await _speech.cancel();
-    _emit(_state.copyWith(listening: false, transcript: ''));
+    _keepListening = false;
+    _restartTimer?.cancel();
+    try {
+      await _speech.cancel().timeout(const Duration(seconds: 2));
+    } catch (_) {}
+    _segments.clear();
+    _currentSegment = '';
+    _emit(_state.copyWith(
+      listening: false,
+      transcript: '',
+      clearError: true,
+    ));
   }
 
   @override
