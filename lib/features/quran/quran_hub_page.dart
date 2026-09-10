@@ -4,10 +4,8 @@ import 'package:provider/provider.dart';
 import '../../data/models/surah.dart';
 import '../../data/repositories/quran_repository.dart';
 import 'bookmarks_page.dart';
-import 'quran_search_page.dart';
-import 'reader_page.dart';
 import 'mushaf_page.dart';
-import 'surah_page.dart';
+import 'quran_search_page.dart';
 
 class QuranHubPage extends StatefulWidget {
   const QuranHubPage({super.key});
@@ -59,12 +57,12 @@ class _QuranHubPageState extends State<QuranHubPage>
                   icon: const Icon(Icons.search),
                 ),
                 IconButton(
-                  tooltip: 'Mushaf mode',
+                  tooltip: 'Open Mushaf',
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const MushafPage()),
                   ),
-                  icon: const Icon(Icons.chrome_reader_mode_outlined),
+                  icon: const Icon(Icons.auto_stories_outlined),
                 ),
                 IconButton(
                   tooltip: 'Bookmarks',
@@ -131,10 +129,22 @@ class _SurahTab extends StatelessWidget {
                 textDirection: TextDirection.rtl,
                 style: const TextStyle(fontSize: 21),
               ),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => SurahPage(surah: surah)),
-              ),
+              onTap: () async {
+                final first = await context
+                    .read<QuranRepository>()
+                    .ayahByReference(surah.id, 1);
+                if (first != null && context.mounted) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MushafPage(
+                        initialPage: first.page,
+                        initialAyahId: first.id,
+                      ),
+                    ),
+                  );
+                }
+              },
             );
           },
         );
@@ -163,12 +173,16 @@ class _JuzTab extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: () async {
-              final ayah = await context.read<QuranRepository>().firstAyahOfJuz(juz);
+              final ayah =
+                  await context.read<QuranRepository>().firstAyahOfJuz(juz);
               if (ayah != null && context.mounted) {
                 await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ReaderPage(startAyahId: ayah.id),
+                    builder: (_) => MushafPage(
+                      initialPage: ayah.page,
+                      initialAyahId: ayah.id,
+                    ),
                   ),
                 );
               }
@@ -179,7 +193,10 @@ class _JuzTab extends StatelessWidget {
                 children: [
                   const Icon(Icons.auto_stories_outlined),
                   const SizedBox(height: 6),
-                  Text('Juz $juz', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text(
+                    'Juz $juz',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ],
               ),
             ),
@@ -216,13 +233,17 @@ class _PageTab extends StatelessWidget {
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 onTap: () async {
-                  final ayah =
-                      await context.read<QuranRepository>().firstAyahOfPage(page);
+                  final ayah = await context
+                      .read<QuranRepository>()
+                      .firstAyahOfPage(page);
                   if (ayah != null && context.mounted) {
                     await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => ReaderPage(startAyahId: ayah.id),
+                        builder: (_) => MushafPage(
+                          initialPage: page,
+                          initialAyahId: ayah.id,
+                        ),
                       ),
                     );
                   }
