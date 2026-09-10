@@ -3,8 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/recitation/offline_whisper_recognizer.dart';
 import '../../core/recitation/recitation_comparator.dart';
-import '../../core/recitation/recitation_recognizer.dart';
+import '../../core/recitation/tarteel_model_manager.dart';
 import '../../data/models/ayah.dart';
 import '../../data/repositories/hifz_repository.dart';
 import '../../data/repositories/quran_repository.dart';
@@ -27,25 +28,32 @@ class AiRecitationTestPage extends StatefulWidget {
   });
 
   @override
-  State<AiRecitationTestPage> createState() => _AiRecitationTestPageState();
+  State<AiRecitationTestPage> createState() =>
+      _AiRecitationTestPageState();
 }
 
 class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
-  final DeviceArabicRecitationRecognizer recognizer = DeviceArabicRecitationRecognizer();
+  late final TarteelModelManager modelManager;
+  late final OfflineWhisperRecitationRecognizer recognizer;
   final RecitationComparator comparator = const RecitationComparator();
 
-  StreamSubscription<RecitationRecognitionState>? subscription;
+  StreamSubscription<RecitationRecognizerState>? recognitionSubscription;
+  StreamSubscription<TarteelModelStatus>? modelSubscription;
   List<Ayah> ayahs = const [];
   bool loading = true;
   bool listening = false;
   bool saving = false;
   bool textHidden = true;
+  bool modelInstalled = false;
+  bool modelDownloading = false;
+  double? modelProgress;
   String transcript = '';
   String? error;
   RecitationComparison? liveComparison;
   RecitationComparison? finalComparison;
 
-  String get expectedText => widget.expectedTextOverride ?? ayahs.map((a) => a.textUthmani).join(' ');
+  String get expectedText =>
+      widget.expectedTextOverride ?? ayahs.map((a) => a.textUthmani).join(' ');
 
   String get referenceLabel {
     if (ayahs.isEmpty) return '';
@@ -58,9 +66,35 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
   @override
   void initState() {
     super.initState();
-    subscription = recognizer.states.listen(_onRecognizerState);
-    recognizer.initialize();
-    _loadAyahs();
+    modelManager = TarteelModelManager();
+    recognizer = OfflineWhisperRecitationRecognizer(modelManager: modelManager);
+    recognitionSubscription = recognizer.states.listen(_onRecognizerState);
+    modelSubscription = modelManager.states.listen(_onModelState);
+    _initialise();
+  }
+
+  Future<void> _initialise() async {
+    await Future.wait([_loadAyahs(), _refreshModelStatus()]);
+  }
+
+  Future<void> _refreshModelStatus() async {
+    final status = await modelManager.status();
+    if (!mounted) return;
+    setState(() {
+      modelInstalled = status.installed;
+      modelDownloading = status.downloading;
+      modelProgress = status.progress;
+    });
+  }
+
+  void _onModelState(TarteelModelStatus status) {
+    if (!mounted) return;
+    setState(() {
+      modelInstalled = status.installed;
+      modelDownloading = status.downloading;
+      modelProgress = status.progress;
+      if (status.error != null) error = _friendlyError(status.error!);
+    });
   }
 
   Future<void> _loadAyahs() async {
@@ -76,7 +110,9 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
       if (ayah != null) selected.add(ayah);
     } else {
       final ids = await context.read<HifzRepository>().testCandidateIds(limit: 1);
-      final id = ids.isNotEmpty ? ids.first : context.read<AppController>().startAyahId;
+      final id = ids.isNotEmpty
+          ? ids.first
+          : context.read<AppController>().startAyahId;
       final ayah = await quran.ayah(id);
       if (ayah != null) selected.add(ayah);
     }
@@ -87,7 +123,7 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
     });
   }
 
-  void _onRecognizerState(RecitationRecognitionState state) {
+  void _onRecognizerState(RecitationRecognizerState state) {
     if (!mounted || ayahs.isEmpty) return;
     final nextTranscript = state.transcript.trim();
     setState(() {
@@ -100,33 +136,129 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
           live: state.listening,
         );
       }
-      error = state.error;
       if (!state.listening && transcript.isNotEmpty) {
-        finalComparison = comparator.compare(expectedText: expectedText, transcript: transcript);
+        finalComparison = comparator.compare(
+          expectedText: expectedText,
+          transcript: transcript,
+        );
       }
     });
   }
 
-  Future<void> _toggleListening() async {
-    if (ayahs.isEmpty) return;
-    if (listening) {
-      await recognizer.stop();
-      if (!mounted) return;
+  String _friendlyError(Object value) {
+    final raw = value.toString();
+    if (raw.contains('error_language_unavailable')) {
+      return 'Arabic speech recognition is not available from the phone speech service. Hifz Journey now uses its own Qur’an recognition model instead; download the model below.';
+    }
+    if (raw.contains('SocketException') || raw.contains('Failed host lookup')) {
+      return 'Could not download the Qur’an recognition model. Check your internet connection and try again.';
+    }
+    if (raw.contains('permission')) {
+      return 'Microphone permission is required for the recitation test. Allow microphone access and try again.';
+    }
+    if (raw.startsWith('Bad state: ')) return raw.substring(11);
+    if (raw.startsWith('StateError: ')) return raw.substring(12);
+    return raw;
+  }
+
+  Future<bool> _ensureModelInstalled() async {
+    if (modelInstalled || await modelManager.isInstalled()) {
+      if (mounted) setState(() => modelInstalled = true);
+      return true;
+    }
+
+    final shouldDownload = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Download Qur’an recognition model?'),
+            content: const Text(
+              'The phone’s Arabic speech service is not reliable enough on every device. '
+              'Hifz Journey can use its own Qur’an-specialized Whisper model instead. '
+              'The one-time download is about 77 MB, then recitation recognition works on-device without a speech server.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Not now'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Download'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!shouldDownload) return false;
+
+    setState(() {
+      error = null;
+      modelDownloading = true;
+    });
+    try {
+      await modelManager.download();
+      if (!mounted) return false;
       setState(() {
-        listening = false;
-        if (transcript.isNotEmpty) {
-          finalComparison = comparator.compare(expectedText: expectedText, transcript: transcript);
-        }
+        modelInstalled = true;
+        modelDownloading = false;
+        modelProgress = 1;
       });
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      setState(() {
+        modelDownloading = false;
+        error = _friendlyError(e);
+      });
+      return false;
+    }
+  }
+
+  Future<void> _toggleListening() async {
+    if (ayahs.isEmpty || modelDownloading) return;
+    if (listening) {
+      try {
+        final finalText = await recognizer.stop();
+        if (!mounted) return;
+        setState(() {
+          listening = false;
+          if (finalText.trim().isNotEmpty) transcript = finalText.trim();
+          if (transcript.isNotEmpty) {
+            finalComparison = comparator.compare(
+              expectedText: expectedText,
+              transcript: transcript,
+            );
+          }
+        });
+      } catch (e) {
+        if (mounted) setState(() => error = _friendlyError(e));
+      }
       return;
     }
+
+    final ready = await _ensureModelInstalled();
+    if (!ready || !mounted) return;
+
     setState(() {
       transcript = '';
       liveComparison = null;
       finalComparison = null;
       error = null;
     });
-    await recognizer.start(preferOnDevice: true);
+
+    try {
+      // Deliberately do not pass the expected ayah as a Whisper prompt. That
+      // could bias the recognizer toward the correct answer and inflate scores.
+      await recognizer.start();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          listening = false;
+          error = _friendlyError(e);
+        });
+      }
+    }
   }
 
   Future<void> _saveResult() async {
@@ -159,7 +291,8 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
 
   @override
   void dispose() {
-    subscription?.cancel();
+    recognitionSubscription?.cancel();
+    modelSubscription?.cancel();
     recognizer.dispose();
     super.dispose();
   }
@@ -181,69 +314,167 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : ayahs.isEmpty
-              ? const Center(child: Text('No ayahs are available for this test.'))
+              ? const Center(
+                  child: Text('No ayahs are available for this test.'),
+                )
               : ListView(
                   padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
                   children: [
-                    if (widget.cueText != null && widget.cueText!.trim().isNotEmpty) ...[
+                    if (widget.cueText != null &&
+                        widget.cueText!.trim().isNotEmpty) ...[
                       _CueCard(text: widget.cueText!),
                       const SizedBox(height: 12),
                     ],
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(18),
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                          Text('Recite $referenceLabel', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                          const SizedBox(height: 12),
-                          if (textHidden)
-                            _LiveReveal(comparison: comparison, listening: listening)
-                          else
-                            Text(expectedText, textDirection: TextDirection.rtl, textAlign: TextAlign.right, style: const TextStyle(fontSize: 29, height: 1.9)),
-                        ]),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Recite $referenceLabel',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 12),
+                            if (textHidden)
+                              _LiveReveal(
+                                comparison: comparison,
+                                listening: listening,
+                              )
+                            else
+                              Text(
+                                expectedText,
+                                textDirection: TextDirection.rtl,
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(fontSize: 29, height: 1.9),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                          Row(children: [Icon(listening ? Icons.graphic_eq_rounded : Icons.mic_none_rounded), const SizedBox(width: 8), Text(listening ? 'Listening live…' : 'Ready', style: const TextStyle(fontWeight: FontWeight.w800))]),
-                          const SizedBox(height: 10),
-                          Text(transcript.isEmpty ? 'Recognized words will appear immediately as you recite.' : transcript, textDirection: TextDirection.rtl, textAlign: TextAlign.right, style: const TextStyle(fontSize: 19, height: 1.6)),
-                        ]),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(listening
+                                    ? Icons.graphic_eq_rounded
+                                    : Icons.mic_none_rounded),
+                                const SizedBox(width: 8),
+                                Text(
+                                  listening ? 'Listening live…' : 'Ready',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              transcript.isEmpty
+                                  ? 'Recognized words will appear as you recite.'
+                                  : transcript,
+                              textDirection: TextDirection.rtl,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(fontSize: 19, height: 1.6),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     if (error != null) ...[
                       const SizedBox(height: 10),
-                      Card(child: Padding(padding: const EdgeInsets.all(14), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)))),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Text(
+                            error!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                     const SizedBox(height: 12),
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          const Icon(Icons.bolt_rounded),
-                          const SizedBox(width: 10),
-                          const Expanded(child: Text('Fast live recognition uses the phone’s Arabic speech engine for immediate partial results and Qur’an-aware word alignment. Availability and offline behaviour depend on the phone’s speech service.')),
-                        ]),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.memory_rounded),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    modelInstalled
+                                        ? 'Qur’an-specialized recognition is installed. Recitation is processed on this device.'
+                                        : 'Qur’an-specialized recognition avoids dependence on your phone’s Arabic speech service. Download it once, then recognition runs on-device.',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (modelDownloading) ...[
+                              const SizedBox(height: 14),
+                              LinearProgressIndicator(value: modelProgress),
+                              const SizedBox(height: 8),
+                              Text(modelProgress == null
+                                  ? 'Downloading recognition model…'
+                                  : 'Downloading recognition model… ${(modelProgress! * 100).round()}%'),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
                     FilledButton.icon(
-                      onPressed: _toggleListening,
-                      icon: Icon(listening ? Icons.stop_rounded : Icons.mic_rounded),
-                      label: Text(listening ? 'Finish recitation' : 'Start reciting'),
-                      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
+                      onPressed: modelDownloading ? null : _toggleListening,
+                      icon: Icon(
+                        listening
+                            ? Icons.stop_rounded
+                            : modelInstalled
+                                ? Icons.mic_rounded
+                                : Icons.download_rounded,
+                      ),
+                      label: Text(
+                        listening
+                            ? 'Finish recitation'
+                            : modelInstalled
+                                ? 'Start reciting'
+                                : 'Download model & start reciting',
+                      ),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(56),
+                      ),
                     ),
                     if (finalComparison != null) ...[
                       const SizedBox(height: 18),
-                      _ResultCard(comparison: finalComparison!, ayahCount: ayahs.length),
+                      _ResultCard(
+                        comparison: finalComparison!,
+                        ayahCount: ayahs.length,
+                      ),
                       const SizedBox(height: 12),
                       FilledButton.icon(
                         onPressed: saving ? null : _saveResult,
                         icon: const Icon(Icons.save_outlined),
-                        label: Text(saving ? 'Saving…' : 'Save passage result & schedule revision'),
-                        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                        label: Text(
+                          saving
+                              ? 'Saving…'
+                              : 'Save passage result & schedule revision',
+                        ),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                        ),
                       ),
                     ],
                   ],
@@ -255,15 +486,30 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
 class _CueCard extends StatelessWidget {
   final String text;
   const _CueCard({required this.text});
+
   @override
   Widget build(BuildContext context) => Card(
         child: Padding(
           padding: const EdgeInsets.all(18),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Text('Cue', style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            Text(text, textDirection: TextDirection.rtl, textAlign: TextAlign.right, style: const TextStyle(fontSize: 26, height: 1.8)),
-          ]),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Cue',
+                style: Theme.of(context)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                text,
+                textDirection: TextDirection.rtl,
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontSize: 26, height: 1.8),
+              ),
+            ],
+          ),
         ),
       );
 }
@@ -271,6 +517,7 @@ class _CueCard extends StatelessWidget {
 class _LiveReveal extends StatelessWidget {
   final RecitationComparison? comparison;
   final bool listening;
+
   const _LiveReveal({required this.comparison, required this.listening});
 
   @override
@@ -279,11 +526,24 @@ class _LiveReveal extends StatelessWidget {
     if (comparison == null) {
       return SizedBox(
         height: 160,
-        child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.visibility_off_outlined, size: 48, color: scheme.outline),
-          const SizedBox(height: 8),
-          Text(listening ? 'Recite to reveal the passage' : 'Passage hidden until you recite'),
-        ])),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.visibility_off_outlined,
+                size: 48,
+                color: scheme.outline,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                listening
+                    ? 'Recite to reveal the passage'
+                    : 'Passage hidden until you recite',
+              ),
+            ],
+          ),
+        ),
       );
     }
     return Wrap(
@@ -294,12 +554,17 @@ class _LiveReveal extends StatelessWidget {
       children: comparison!.words.map<Widget>((word) {
         final pending = word.state == WordAssessmentState.pending;
         final correct = word.state == WordAssessmentState.correct;
-        final wrong = word.state == WordAssessmentState.substituted || word.state == WordAssessmentState.missing;
+        final wrong = word.state == WordAssessmentState.substituted ||
+            word.state == WordAssessmentState.missing;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 100),
           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
           decoration: BoxDecoration(
-            color: correct ? scheme.primaryContainer : wrong ? scheme.errorContainer : Colors.transparent,
+            color: correct
+                ? scheme.primaryContainer
+                : wrong
+                    ? scheme.errorContainer
+                    : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
@@ -308,7 +573,11 @@ class _LiveReveal extends StatelessWidget {
             style: TextStyle(
               fontSize: 27,
               height: 1.7,
-              color: pending ? scheme.outlineVariant.withValues(alpha: .18) : wrong ? scheme.onErrorContainer : scheme.onSurface,
+              color: pending
+                  ? scheme.outlineVariant.withValues(alpha: .18)
+                  : wrong
+                      ? scheme.onErrorContainer
+                      : scheme.onSurface,
               fontWeight: correct ? FontWeight.w600 : FontWeight.normal,
             ),
           ),
@@ -321,26 +590,63 @@ class _LiveReveal extends StatelessWidget {
 class _ResultCard extends StatelessWidget {
   final RecitationComparison comparison;
   final int ayahCount;
+
   const _ResultCard({required this.comparison, required this.ayahCount});
+
   @override
   Widget build(BuildContext context) {
     final percent = (comparison.score * 100).round();
-    final label = percent >= 88 ? 'Strong' : percent >= 58 ? 'Partial' : 'Needs revision';
+    final label = percent >= 88
+        ? 'Strong'
+        : percent >= 58
+            ? 'Partial'
+            : 'Needs revision';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
-        child: Column(children: [
-          Text('$percent%', style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w900)),
-          Text('$label · $ayahCount ayah${ayahCount == 1 ? '' : 's'}', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: _Metric(value: comparison.correctWords, label: 'Correct')),
-            Expanded(child: _Metric(value: comparison.substitutedWords, label: 'Different')),
-            Expanded(child: _Metric(value: comparison.missingWords, label: 'Missed')),
-          ]),
-          const SizedBox(height: 12),
-          const Text('This grades memorized text accuracy. It does not claim to grade tajwid, makhraj or madd duration.', textAlign: TextAlign.center),
-        ]),
+        child: Column(
+          children: [
+            Text(
+              '$percent%',
+              style: Theme.of(context)
+                  .textTheme
+                  .displaySmall
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            Text(
+              '$label · $ayahCount ayah${ayahCount == 1 ? '' : 's'}',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _Metric(
+                    value: comparison.correctWords,
+                    label: 'Correct',
+                  ),
+                ),
+                Expanded(
+                  child: _Metric(
+                    value: comparison.substitutedWords,
+                    label: 'Different',
+                  ),
+                ),
+                Expanded(
+                  child: _Metric(
+                    value: comparison.missingWords,
+                    label: 'Missed',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'This grades memorized text accuracy. It does not claim to grade tajwid, makhraj or madd duration.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -349,7 +655,20 @@ class _ResultCard extends StatelessWidget {
 class _Metric extends StatelessWidget {
   final int value;
   final String label;
+
   const _Metric({required this.value, required this.label});
+
   @override
-  Widget build(BuildContext context) => Column(children: [Text('$value', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), Text(label)]);
+  Widget build(BuildContext context) => Column(
+        children: [
+          Text(
+            '$value',
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          Text(label),
+        ],
+      );
 }
