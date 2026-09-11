@@ -18,8 +18,10 @@ class HifzTestPage extends StatefulWidget {
 
 class _HifzTestPageState extends State<HifzTestPage> {
   late Future<List<Ayah>> items;
-  final DeviceArabicRecitationRecognizer recognizer = DeviceArabicRecitationRecognizer();
-  final QuranTextRecitationAssessor assessor = const QuranTextRecitationAssessor();
+  final DeviceArabicRecitationRecognizer recognizer =
+      DeviceArabicRecitationRecognizer();
+  final QuranTextRecitationAssessor assessor =
+      const QuranTextRecitationAssessor();
   StreamSubscription<RecitationRecognitionState>? subscription;
 
   RecitationRecognitionState speech = RecitationRecognitionState.initial();
@@ -66,7 +68,7 @@ class _HifzTestPageState extends State<HifzTestPage> {
       assessment = null;
       revealed = false;
     });
-    await recognizer.start(preferOnDevice: true);
+    await recognizer.start(preferOnDevice: false);
   }
 
   Future<void> _stopAndAssess(Ayah ayah) async {
@@ -105,7 +107,9 @@ class _HifzTestPageState extends State<HifzTestPage> {
       saving = false;
       assessment = null;
       revealed = false;
-      speech = RecitationRecognitionState.initial().copyWith(available: recognizer.state.available);
+      speech = RecitationRecognitionState.initial().copyWith(
+        available: recognizer.state.available,
+      );
       if (index + 1 < total) {
         index++;
       } else {
@@ -117,29 +121,13 @@ class _HifzTestPageState extends State<HifzTestPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Recitation Coach • Beta'),
-        actions: [
-          IconButton(
-            tooltip: 'About assessment',
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text('Memorization accuracy'),
-                content: const Text(
-                  'V3 Beta compares recognized Arabic words with the expected ayah. It can help detect omissions and substitutions, but it is not a qualified tajwid or makhraj assessment.',
-                ),
-                actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-              ),
-            ),
-            icon: const Icon(Icons.info_outline),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Recitation test')),
       body: FutureBuilder<List<Ayah>>(
         future: items,
         builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
           final ayahs = snapshot.data!;
           if (ayahs.isEmpty) return const _EmptyTest();
           if (index >= ayahs.length) {
@@ -166,7 +154,10 @@ class _HifzTestPageState extends State<HifzTestPage> {
             padding: const EdgeInsets.all(22),
             child: Column(
               children: [
-                Text('Recite from memory', style: Theme.of(context).textTheme.titleLarge),
+                Text(
+                  'Recite from memory',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
                 const SizedBox(height: 16),
                 if (!revealed)
                   const Icon(Icons.visibility_off_outlined, size: 58)
@@ -180,7 +171,11 @@ class _HifzTestPageState extends State<HifzTestPage> {
                 const SizedBox(height: 14),
                 TextButton.icon(
                   onPressed: () => setState(() => revealed = !revealed),
-                  icon: Icon(revealed ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                  icon: Icon(
+                    revealed
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
                   label: Text(revealed ? 'Hide ayah' : 'Reveal ayah'),
                 ),
               ],
@@ -200,24 +195,30 @@ class _HifzTestPageState extends State<HifzTestPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        speech.listening ? 'Listening… recite the ayah' : 'Microphone recitation test',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                        speech.listening ? 'Listening…' : 'Ready',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
                       ),
                     ),
                   ],
                 ),
                 if (!speech.available) ...[
                   const SizedBox(height: 8),
-                  const Text('Speech recognition is unavailable or microphone permission has not been granted on this device.'),
+                  const Text('Speech recognition is unavailable.'),
                 ],
                 if (speech.error != null) ...[
                   const SizedBox(height: 8),
-                  Text(speech.error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  Text(
+                    speech.error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ],
                 if (speech.transcript.isNotEmpty) ...[
                   const SizedBox(height: 14),
-                  Text('Recognized Arabic', style: Theme.of(context).textTheme.labelLarge),
-                  const SizedBox(height: 6),
                   Text(
                     speech.transcript,
                     textDirection: TextDirection.rtl,
@@ -234,12 +235,18 @@ class _HifzTestPageState extends State<HifzTestPage> {
                   )
                 else
                   FilledButton.icon(
-                    onPressed: speech.available ? _listen : () async {
-                      await recognizer.initialize();
-                      if (mounted) setState(() => speech = recognizer.state);
-                    },
+                    onPressed: speech.available
+                        ? _listen
+                        : () async {
+                            await recognizer.initialize();
+                            if (mounted) {
+                              setState(() => speech = recognizer.state);
+                            }
+                          },
                     icon: const Icon(Icons.mic),
-                    label: Text(speech.available ? 'Start listening' : 'Enable microphone'),
+                    label: Text(
+                      speech.available ? 'Start listening' : 'Enable microphone',
+                    ),
                   ),
               ],
             ),
@@ -252,7 +259,7 @@ class _HifzTestPageState extends State<HifzTestPage> {
           FilledButton.icon(
             onPressed: saving ? null : () => _accept(ayah, total),
             icon: const Icon(Icons.arrow_forward),
-            label: Text(saving ? 'Saving…' : 'Accept result & continue'),
+            label: Text(saving ? 'Saving…' : 'Continue'),
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
@@ -268,12 +275,17 @@ class _HifzTestPageState extends State<HifzTestPage> {
 
 class _AssessmentCard extends StatelessWidget {
   final RecitationAssessment result;
+
   const _AssessmentCard({required this.result});
 
   @override
   Widget build(BuildContext context) {
     final percent = (result.recallScore * 100).round();
-    final grade = percent >= 86 ? 'Strong' : percent >= 55 ? 'Partial' : 'Needs revision';
+    final grade = percent >= 86
+        ? 'Strong'
+        : percent >= 55
+            ? 'Partial'
+            : 'Needs revision';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -282,9 +294,21 @@ class _AssessmentCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text('$percent%', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+                Text(
+                  '$percent%',
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineMedium
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
                 const SizedBox(width: 12),
-                Text(grade, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                Text(
+                  grade,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -301,8 +325,15 @@ class _AssessmentCard extends StatelessWidget {
                 };
                 return Chip(
                   backgroundColor: background,
-                  label: Text(token.expected, textDirection: TextDirection.rtl),
-                  tooltip: token.spoken == null ? 'Missed' : token.status == RecitationTokenStatus.substituted ? 'Heard: ${token.spoken}' : 'Correct',
+                  label: Text(
+                    token.expected,
+                    textDirection: TextDirection.rtl,
+                  ),
+                  tooltip: token.spoken == null
+                      ? 'Missed'
+                      : token.status == RecitationTokenStatus.substituted
+                          ? 'Heard: ${token.spoken}'
+                          : 'Correct',
                 );
               }).toList(),
             ),
@@ -317,12 +348,16 @@ class _AssessmentCard extends StatelessWidget {
 
 class _EmptyTest extends StatelessWidget {
   const _EmptyTest();
+
   @override
   Widget build(BuildContext context) {
     return const Center(
       child: Padding(
         padding: EdgeInsets.all(30),
-        child: Text('Memorize and review a few ayahs first. Your recitation test will appear here.', textAlign: TextAlign.center),
+        child: Text(
+          'No memorized ayahs are ready for testing yet.',
+          textAlign: TextAlign.center,
+        ),
       ),
     );
   }
@@ -331,6 +366,7 @@ class _EmptyTest extends StatelessWidget {
 class _FinishedTest extends StatelessWidget {
   final double score;
   final int total;
+
   const _FinishedTest({required this.score, required this.total});
 
   @override
@@ -347,10 +383,21 @@ class _FinishedTest extends StatelessWidget {
               children: [
                 const Icon(Icons.record_voice_over_outlined, size: 52),
                 const SizedBox(height: 12),
-                Text('$percent%', style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800)),
-                Text('Average across $total recitation${total == 1 ? '' : 's'}'),
+                Text(
+                  '$percent%',
+                  style: Theme.of(context)
+                      .textTheme
+                      .displaySmall
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  'Average across $total recitation${total == 1 ? '' : 's'}',
+                ),
                 const SizedBox(height: 18),
-                FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done'),
+                ),
               ],
             ),
           ),
