@@ -35,8 +35,25 @@ class QuranTextNormalizer {
   static final RegExp _nonArabic = RegExp(r'[^\u0621-\u064A\s]');
   static final RegExp _spaces = RegExp(r'\s+');
 
+  static const Map<String, List<String>> _muqattaat = {
+    'الم': ['الف', 'لام', 'ميم'],
+    'المص': ['الف', 'لام', 'ميم', 'صاد'],
+    'الر': ['الف', 'لام', 'را'],
+    'المر': ['الف', 'لام', 'ميم', 'را'],
+    'كهيعص': ['كاف', 'ها', 'يا', 'عين', 'صاد'],
+    'طه': ['طا', 'ها'],
+    'طسم': ['طا', 'سين', 'ميم'],
+    'طس': ['طا', 'سين'],
+    'يس': ['يا', 'سين'],
+    'ص': ['صاد'],
+    'حم': ['حا', 'ميم'],
+    'عسق': ['عين', 'سين', 'قاف'],
+    'ق': ['قاف'],
+    'ن': ['نون'],
+  };
+
   static String normalize(String input) {
-    var value = input
+    return input
         .replaceAll(_marks, '')
         .replaceAll('ٱ', 'ا')
         .replaceAll(RegExp('[أإآ]'), 'ا')
@@ -46,12 +63,26 @@ class QuranTextNormalizer {
         .replaceAll(_nonArabic, ' ')
         .replaceAll(_spaces, ' ')
         .trim();
-    return value;
   }
 
   static List<String> words(String input) {
     final value = normalize(input);
     return value.isEmpty ? const [] : value.split(' ');
+  }
+
+  static List<String> comparisonWords(String input) {
+    final source = words(input);
+    if (source.isEmpty) return const [];
+    final expanded = <String>[];
+    for (final word in source) {
+      final replacement = _muqattaat[word];
+      if (replacement == null) {
+        expanded.add(word);
+      } else {
+        expanded.addAll(replacement);
+      }
+    }
+    return expanded;
   }
 }
 
@@ -63,14 +94,18 @@ class RecitationComparator {
     required String transcript,
     bool live = false,
   }) {
-    final expected = QuranTextNormalizer.words(expectedText);
-    final heard = QuranTextNormalizer.words(transcript);
+    final expected = QuranTextNormalizer.comparisonWords(expectedText);
+    final heard = QuranTextNormalizer.comparisonWords(transcript);
     final m = expected.length;
     final n = heard.length;
 
     final dp = List.generate(m + 1, (_) => List<int>.filled(n + 1, 0));
-    for (var i = 0; i <= m; i++) dp[i][0] = i;
-    for (var j = 0; j <= n; j++) dp[0][j] = j;
+    for (var i = 0; i <= m; i++) {
+      dp[i][0] = i;
+    }
+    for (var j = 0; j <= n; j++) {
+      dp[0][j] = j;
+    }
 
     for (var i = 1; i <= m; i++) {
       for (var j = 1; j <= n; j++) {
@@ -101,7 +136,9 @@ class RecitationComparator {
         correct++;
         i--;
         j--;
-      } else if (i > 0 && j > 0 && dp[i][j] == dp[i - 1][j - 1] + 1) {
+      } else if (i > 0 &&
+          j > 0 &&
+          dp[i][j] == dp[i - 1][j - 1] + 1) {
         aligned.add(
           WordAssessment(
             expected: expected[i - 1],
@@ -117,7 +154,9 @@ class RecitationComparator {
           WordAssessment(
             expected: expected[i - 1],
             heard: null,
-            state: live ? WordAssessmentState.pending : WordAssessmentState.missing,
+            state: live
+                ? WordAssessmentState.pending
+                : WordAssessmentState.missing,
           ),
         );
         if (!live) missing++;
