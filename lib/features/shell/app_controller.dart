@@ -13,8 +13,22 @@ class AppController extends ChangeNotifier {
   final SettingsService settingsService;
   final NotificationService notifications;
 
-  HifzStats stats = const HifzStats(introduced: 0, learning: 0, stable: 0, mastered: 0, due: 0, averageStrength: 0);
+  HifzStats stats = const HifzStats(
+    introduced: 0,
+    learning: 0,
+    stable: 0,
+    mastered: 0,
+    due: 0,
+    averageStrength: 0,
+  );
+  StreakStatus streakStatus = const StreakStatus(
+    streak: 0,
+    restCredits: 0,
+    usedRestDays: 0,
+  );
   Ayah? lastRead;
+  int todayCompletedAyahs = 0;
+  int todayCompletedPages = 0;
   int dailyTarget = 3;
   HifzTargetUnit hifzTargetUnit = HifzTargetUnit.ayahs;
   int hifzTargetAmount = 3;
@@ -30,15 +44,42 @@ class AppController extends ChangeNotifier {
   AudioReciter get reciter => AudioReciters.byId(reciterId);
 
   String get hifzTargetLabel => switch (hifzTargetUnit) {
-        HifzTargetUnit.ayahs => '$hifzTargetAmount ayah${hifzTargetAmount == 1 ? '' : 's'}',
-        HifzTargetUnit.pages => '$hifzTargetAmount page${hifzTargetAmount == 1 ? '' : 's'}',
+        HifzTargetUnit.ayahs =>
+          '$hifzTargetAmount ayah${hifzTargetAmount == 1 ? '' : 's'}',
+        HifzTargetUnit.pages =>
+          '$hifzTargetAmount page${hifzTargetAmount == 1 ? '' : 's'}',
         HifzTargetUnit.thumun => 'Thumun (⅛ Hizb)',
         HifzTargetUnit.quarterHizb => 'Quarter Hizb',
         HifzTargetUnit.halfHizb => 'Half Hizb',
         HifzTargetUnit.hizb => '1 Hizb',
       };
 
-  AppController({required this.hifz, required this.quran, required this.settingsService, required this.notifications});
+  int get targetPageCount => switch (hifzTargetUnit) {
+        HifzTargetUnit.pages => hifzTargetAmount,
+        HifzTargetUnit.thumun => 1,
+        HifzTargetUnit.quarterHizb => 3,
+        HifzTargetUnit.halfHizb => 5,
+        HifzTargetUnit.hizb => 10,
+        HifzTargetUnit.ayahs => 0,
+      };
+
+  bool get todayTargetCompleted => switch (hifzTargetUnit) {
+        HifzTargetUnit.ayahs => todayCompletedAyahs >= hifzTargetAmount,
+        _ => todayCompletedPages >= targetPageCount,
+      };
+
+  String get todayProgressLabel => switch (hifzTargetUnit) {
+        HifzTargetUnit.ayahs =>
+          '$todayCompletedAyahs/$hifzTargetAmount ayahs',
+        _ => '$todayCompletedPages/$targetPageCount pages',
+      };
+
+  AppController({
+    required this.hifz,
+    required this.quran,
+    required this.settingsService,
+    required this.notifications,
+  });
 
   Future<void> load() async {
     final settings = await settingsService.load();
@@ -53,7 +94,12 @@ class AppController extends ChangeNotifier {
     startAyahId = settings.startAyahId;
     reciterId = settings.reciterId;
     await refresh();
-    if (remindersEnabled) await notifications.scheduleDaily(hour: reminderHour, minute: reminderMinute);
+    if (remindersEnabled) {
+      await notifications.scheduleDaily(
+        hour: reminderHour,
+        minute: reminderMinute,
+      );
+    }
     loaded = true;
     notifyListeners();
   }
@@ -61,6 +107,9 @@ class AppController extends ChangeNotifier {
   Future<void> refresh() async {
     stats = await hifz.stats();
     lastRead = await quran.lastRead();
+    todayCompletedAyahs = await hifz.introducedTodayCount();
+    todayCompletedPages = await hifz.introducedTodayPages();
+    streakStatus = await hifz.streakStatus();
     notifyListeners();
   }
 
@@ -85,7 +134,10 @@ class AppController extends ChangeNotifier {
     if (value) {
       final granted = await notifications.requestPermission();
       if (!granted) return false;
-      await notifications.scheduleDaily(hour: reminderHour, minute: reminderMinute);
+      await notifications.scheduleDaily(
+        hour: reminderHour,
+        minute: reminderMinute,
+      );
     } else {
       await notifications.cancelDaily();
     }
@@ -99,7 +151,9 @@ class AppController extends ChangeNotifier {
     reminderHour = time.hour;
     reminderMinute = time.minute;
     await settingsService.setReminderTime(time.hour, time.minute);
-    if (remindersEnabled) await notifications.scheduleDaily(hour: time.hour, minute: time.minute);
+    if (remindersEnabled) {
+      await notifications.scheduleDaily(hour: time.hour, minute: time.minute);
+    }
     notifyListeners();
   }
 
@@ -115,7 +169,11 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> completeOnboarding({required int target, required int startId, required TimeOfDay reminder}) async {
+  Future<void> completeOnboarding({
+    required int target,
+    required int startId,
+    required TimeOfDay reminder,
+  }) async {
     dailyTarget = target;
     hifzTargetUnit = HifzTargetUnit.ayahs;
     hifzTargetAmount = target;
@@ -123,7 +181,12 @@ class AppController extends ChangeNotifier {
     reminderHour = reminder.hour;
     reminderMinute = reminder.minute;
     onboardingCompleted = true;
-    await settingsService.completeOnboarding(dailyTarget: target, startAyahId: startId, hour: reminder.hour, minute: reminder.minute);
+    await settingsService.completeOnboarding(
+      dailyTarget: target,
+      startAyahId: startId,
+      hour: reminder.hour,
+      minute: reminder.minute,
+    );
     notifyListeners();
   }
 
