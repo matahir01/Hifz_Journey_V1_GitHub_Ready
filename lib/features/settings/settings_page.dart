@@ -45,14 +45,15 @@ class SettingsPage extends StatelessWidget {
                 const Divider(height: 1),
                 SwitchListTile(
                   title: const Text('Daily reminder'),
-                  subtitle: const Text('Stay consistent with a daily reminder'),
                   value: controller.remindersEnabled,
                   onChanged: (v) async {
                     final ok = await controller.setRemindersEnabled(v);
                     if (!ok && context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Notification permission was not granted.'),
+                          content: Text(
+                            'Notification permission was not granted.',
+                          ),
                         ),
                       );
                     }
@@ -113,7 +114,9 @@ class SettingsPage extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.headphones_outlined),
                   title: const Text('Reciter & audio'),
-                  subtitle: const Text('Listen online or save Surahs for offline playback'),
+                  subtitle: const Text(
+                    'Listen online or save Surahs for offline playback',
+                  ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.push(
                     context,
@@ -155,7 +158,7 @@ class SettingsPage extends StatelessWidget {
                   leading: const Icon(Icons.backup_outlined),
                   title: const Text('Export backup'),
                   subtitle: const Text(
-                    'Save Hifz progress, history, settings and bookmarks',
+                    'Hifz progress, history, settings and bookmarks',
                   ),
                   onTap: () async {
                     try {
@@ -179,7 +182,6 @@ class SettingsPage extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.restore_outlined),
                   title: const Text('Restore backup'),
-                  subtitle: const Text('Restore a saved Hifz Journey backup'),
                   onTap: () async {
                     final ok = await showDialog<bool>(
                       context: context,
@@ -208,7 +210,9 @@ class SettingsPage extends StatelessWidget {
                           await context.read<AppController>().load();
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Backup restored.')),
+                              const SnackBar(
+                                content: Text('Backup restored.'),
+                              ),
                             );
                           }
                         }
@@ -228,11 +232,9 @@ class SettingsPage extends StatelessWidget {
           const SizedBox(height: 14),
           const Card(
             child: ListTile(
-              leading: Icon(Icons.verified_outlined),
-              title: Text('Qur’an text attribution'),
-              subtitle: Text(
-                'Arabic Qur’an text is sourced from the Tanzil Project and must remain verbatim with required attribution.',
-              ),
+              leading: Icon(Icons.info_outline),
+              title: Text('Qur’an text'),
+              subtitle: Text('Tanzil Project · tanzil.net'),
             ),
           ),
           const SizedBox(height: 14),
