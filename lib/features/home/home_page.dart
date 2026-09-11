@@ -90,12 +90,21 @@ class HomePage extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    'Your Qur’an. Your Journey.',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          height: 1.08,
-                        ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Your Qur’an. Your Journey.',
+                        maxLines: 1,
+                        softWrap: false,
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              height: 1.08,
+                            ),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
