@@ -35,7 +35,7 @@ class QuranTextNormalizer {
   static final RegExp _nonArabic = RegExp(r'[^\u0621-\u064A\s]');
   static final RegExp _spaces = RegExp(r'\s+');
 
-  static const Map<String, List<String>> _muqattaat = {
+  static const Map<String, List<String>> muqattaat = {
     'الم': ['الف', 'لام', 'ميم'],
     'المص': ['الف', 'لام', 'ميم', 'صاد'],
     'الر': ['الف', 'لام', 'را'],
@@ -70,19 +70,32 @@ class QuranTextNormalizer {
     return value.isEmpty ? const [] : value.split(' ');
   }
 
-  static List<String> comparisonWords(String input) {
-    final source = words(input);
-    if (source.isEmpty) return const [];
-    final expanded = <String>[];
-    for (final word in source) {
-      final replacement = _muqattaat[word];
-      if (replacement == null) {
-        expanded.add(word);
-      } else {
-        expanded.addAll(replacement);
+  static List<String> collapseMuqattaat(
+    List<String> expected,
+    List<String> heard,
+  ) {
+    final result = List<String>.from(heard);
+    for (final token in expected) {
+      final spoken = muqattaat[token];
+      if (spoken == null || spoken.isEmpty) continue;
+      var i = 0;
+      while (i <= result.length - spoken.length) {
+        var matches = true;
+        for (var j = 0; j < spoken.length; j++) {
+          if (result[i + j] != spoken[j]) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) {
+          result.replaceRange(i, i + spoken.length, [token]);
+          i++;
+        } else {
+          i++;
+        }
       }
     }
-    return expanded;
+    return result;
   }
 }
 
@@ -94,8 +107,9 @@ class RecitationComparator {
     required String transcript,
     bool live = false,
   }) {
-    final expected = QuranTextNormalizer.comparisonWords(expectedText);
-    final heard = QuranTextNormalizer.comparisonWords(transcript);
+    final expected = QuranTextNormalizer.words(expectedText);
+    final rawHeard = QuranTextNormalizer.words(transcript);
+    final heard = QuranTextNormalizer.collapseMuqattaat(expected, rawHeard);
     final m = expected.length;
     final n = heard.length;
 
