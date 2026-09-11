@@ -58,8 +58,8 @@ abstract class RecitationRecognizer {
 ///
 /// Android speech providers can end an individual recognition session after a
 /// pause or an internal time limit. Hifz Journey therefore treats those endings
-/// as short segments, commits every recognized partial before reconnecting, and
-/// keeps one accumulated transcript until the user explicitly finishes.
+/// as short segments and keeps one accumulated transcript until the user
+/// explicitly finishes or resets the test.
 class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final _controller =
@@ -73,6 +73,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
   bool _keepListening = false;
   bool _starting = false;
   bool _switchingLocale = false;
+  bool _allowTranscriptReset = false;
   final List<String> _segments = <String>[];
   String _currentSegment = '';
   Timer? _restartTimer;
@@ -84,30 +85,59 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
   @override
   RecitationRecognitionState get state => _state;
 
-  void _emit(RecitationRecognitionState value) {
-    _state = value;
-    if (!_controller.isClosed) _controller.add(value);
-  }
-
-  String get _activeLocale =>
-      _arabicLocales.isEmpty ? 'ar-SA' : _arabicLocales[_localeIndex];
-
   static List<String> _words(String text) => text
       .trim()
       .split(RegExp(r'\s+'))
       .where((word) => word.isNotEmpty)
       .toList();
 
-  static String _mergeText(String previous, String current) {
+  static String _mergeStableText(String previous, String current) {
     final oldWords = _words(previous);
     final newWords = _words(current);
+
     if (oldWords.isEmpty) return newWords.join(' ');
     if (newWords.isEmpty) return oldWords.join(' ');
 
+    // If the speech service is returning a revised cumulative hypothesis for
+    // the same utterance, never allow a shorter result to erase words that have
+    // already been captured. When it grows, accept the newer hypothesis.
+    final minLength = oldWords.length < newWords.length
+        ? oldWords.length
+        : newWords.length;
+    var commonPrefix = 0;
+    while (commonPrefix < minLength &&
+        oldWords[commonPrefix] == newWords[commonPrefix]) {
+      commonPrefix++;
+    }
+
+    final prefixThreshold = minLength <= 2 ? minLength : 3;
+    if (commonPrefix >= prefixThreshold) {
+      if (newWords.length < oldWords.length) return oldWords.join(' ');
+      return newWords.join(' ');
+    }
+
+    // If Android briefly sends only a suffix/subset already present in the
+    // accumulated transcript, retain the accumulated transcript unchanged.
+    if (newWords.length <= oldWords.length) {
+      for (var start = 0;
+          start <= oldWords.length - newWords.length;
+          start++) {
+        var same = true;
+        for (var i = 0; i < newWords.length; i++) {
+          if (oldWords[start + i] != newWords[i]) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return oldWords.join(' ');
+      }
+    }
+
+    // Otherwise this is most likely a fresh segment after Android restarted
+    // recognition. Append it while removing any suffix/prefix overlap.
     final maxOverlap =
         oldWords.length < newWords.length ? oldWords.length : newWords.length;
     var overlap = 0;
-
     for (var count = maxOverlap; count > 0; count--) {
       var same = true;
       for (var i = 0; i < count; i++) {
@@ -127,6 +157,32 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
       ...newWords.skip(overlap),
     ].join(' ');
   }
+
+  void _emit(RecitationRecognitionState value) {
+    var next = value;
+
+    // During one active test the transcript is monotonic. Platform callbacks
+    // are allowed to revise or shorten their own partial hypothesis, but they
+    // are never allowed to remove text that Hifz Journey already displayed.
+    if (!_allowTranscriptReset && _keepListening) {
+      final previous = _state.transcript.trim();
+      final incoming = value.transcript.trim();
+      if (previous.isNotEmpty) {
+        next = value.copyWith(
+          transcript: _mergeStableText(previous, incoming),
+        );
+      }
+    }
+
+    _state = next;
+    if (!_controller.isClosed) _controller.add(next);
+  }
+
+  String get _activeLocale =>
+      _arabicLocales.isEmpty ? 'ar-SA' : _arabicLocales[_localeIndex];
+
+  static String _mergeText(String previous, String current) =>
+      _mergeStableText(previous, current);
 
   String get _committedTranscript => _segments.join(' ').trim();
 
@@ -204,8 +260,6 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
           return;
         }
 
-        // Preserve every partial result before Android releases/restarts the
-        // recognizer. This prevents already-recited words from disappearing.
         _commitCurrentSegment();
 
         if (message == 'error_busy') {
@@ -229,7 +283,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
             clearError: true,
           ));
           _scheduleRestart(
-            delay: const Duration(milliseconds: 750),
+            delay: const Duration(milliseconds: 650),
             releaseRecognizerFirst: true,
           );
           return;
@@ -241,7 +295,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
           error: message,
         ));
         _scheduleRestart(
-          delay: const Duration(milliseconds: 1100),
+          delay: const Duration(milliseconds: 1000),
           releaseRecognizerFirst: true,
         );
       },
@@ -254,7 +308,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
             transcript: _combinedTranscript,
             clearError: true,
           ));
-          _scheduleRestart(delay: const Duration(milliseconds: 800));
+          _scheduleRestart(delay: const Duration(milliseconds: 650));
         }
       },
     );
@@ -269,7 +323,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
   }
 
   void _scheduleRestart({
-    Duration delay = const Duration(milliseconds: 800),
+    Duration delay = const Duration(milliseconds: 650),
     bool releaseRecognizerFirst = false,
   }) {
     if (!_keepListening || _starting || _switchingLocale) return;
@@ -283,11 +337,11 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
           await _speech.cancel().timeout(const Duration(milliseconds: 900));
         } catch (_) {}
         if (!_keepListening) return;
-        await Future<void>.delayed(const Duration(milliseconds: 350));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
       }
 
       if (_speech.isListening) {
-        _scheduleRestart(delay: const Duration(milliseconds: 650));
+        _scheduleRestart(delay: const Duration(milliseconds: 550));
         return;
       }
 
@@ -296,7 +350,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
       } catch (_) {
         if (!_keepListening) return;
         _scheduleRestart(
-          delay: const Duration(milliseconds: 1200),
+          delay: const Duration(milliseconds: 1000),
           releaseRecognizerFirst: true,
         );
       }
@@ -323,7 +377,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     try {
       await _speech.cancel().timeout(const Duration(seconds: 1));
     } catch (_) {}
-    await Future<void>.delayed(const Duration(milliseconds: 450));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
     _switchingLocale = false;
 
     if (_keepListening) {
@@ -335,8 +389,6 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     if (_starting || !_keepListening) return;
     _starting = true;
 
-    // If the previous platform session ended without a finalResult callback,
-    // preserve its last partial before beginning the next native session.
     _commitCurrentSegment();
 
     try {
@@ -407,6 +459,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     _currentSegment = '';
     _localeIndex = 0;
     _busyRetries = 0;
+    _allowTranscriptReset = true;
     _keepListening = true;
     _emit(_state.copyWith(
       listening: true,
@@ -414,6 +467,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
       confidence: 0,
       clearError: true,
     ));
+    _allowTranscriptReset = false;
 
     if (preferOnDevice) {
       try {
@@ -430,7 +484,6 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     _keepListening = false;
     _restartTimer?.cancel();
 
-    // Lock in the latest partial before asking Android to finish the session.
     _commitCurrentSegment();
     try {
       await _speech.stop().timeout(const Duration(seconds: 2));
@@ -439,7 +492,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
 
     _emit(_state.copyWith(
       listening: false,
-      transcript: _combinedTranscript,
+      transcript: _mergeStableText(_state.transcript, _combinedTranscript),
       clearError: true,
     ));
   }
@@ -453,11 +506,13 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     } catch (_) {}
     _segments.clear();
     _currentSegment = '';
+    _allowTranscriptReset = true;
     _emit(_state.copyWith(
       listening: false,
       transcript: '',
       clearError: true,
     ));
+    _allowTranscriptReset = false;
   }
 
   @override
