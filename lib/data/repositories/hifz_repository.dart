@@ -166,7 +166,7 @@ class HifzRepository {
           'failed_recalls': failedRecalls,
           'consecutive_successes': consecutiveSuccesses,
           'introduced_at': shouldIntroduce
-              ? old?['introduced_at'] ?? now.toIso8601String()
+              ? (old?['introduced_at'] ?? now.toIso8601String())
               : null,
         },
         where: 'ayah_id = ?',
