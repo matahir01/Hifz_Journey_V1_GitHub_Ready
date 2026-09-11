@@ -56,14 +56,13 @@ abstract class RecitationRecognizer {
 
 /// Fast Android/iOS Arabic recognizer.
 ///
-/// Android speech providers are not true unlimited streaming recognizers. They
-/// can end a provider session after silence or an internal time limit even
-/// while the user is still doing the same Hifz test. Hifz Journey therefore
-/// treats the provider as a sequence of short recognition segments.
-///
-/// The important invariant is that text already heard by the app is committed
-/// before any provider restart. A later Android segment can revise its own
-/// partial hypothesis, but it can never erase an earlier committed checkpoint.
+/// Uses the normal network-backed speech service by default. Android speech
+/// providers often end an individual recognition session after a pause or a
+/// short internal limit, and some providers emit rolling partial chunks rather
+/// than one cumulative sentence. Hifz Journey therefore checkpoints every
+/// recognized chunk and silently opens a new provider segment when necessary.
+/// Already-heard text is monotonic: later callbacks may add/correct the tail,
+/// but they are never allowed to erase earlier recitation progress.
 class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final _controller =
@@ -124,9 +123,25 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
         .replaceAll(RegExp(r'[^\u0621-\u064A]'), '');
   }
 
-  /// Joins two provider segments without allowing a restart to duplicate the
-  /// words immediately around the boundary. Android commonly repeats the last
-  /// one or two words when a new recognition session opens.
+  static List<String> _normalizedWords(String value) => value
+      .trim()
+      .split(RegExp(r'\s+'))
+      .map(_normalizeToken)
+      .where((word) => word.isNotEmpty)
+      .toList(growable: false);
+
+  static bool _isPrefix(List<String> prefix, List<String> value) {
+    if (prefix.length > value.length) return false;
+    for (var i = 0; i < prefix.length; i++) {
+      if (prefix[i] != value[i]) return false;
+    }
+    return true;
+  }
+
+  /// Merge speech-provider hypotheses without ever letting a later callback
+  /// erase words that were already heard. Some Android providers send a full
+  /// cumulative hypothesis, while others send short rolling chunks. We handle
+  /// both forms here.
   static String _mergeText(String previous, String current) {
     final oldText = previous.trim();
     final newText = current.trim();
@@ -135,10 +150,33 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
 
     final oldWords = oldText.split(RegExp(r'\s+'));
     final newWords = newText.split(RegExp(r'\s+'));
-    final maxOverlap = oldWords.length < newWords.length
-        ? oldWords.length
-        : newWords.length;
+    final oldNorm = _normalizedWords(oldText);
+    final newNorm = _normalizedWords(newText);
 
+    if (oldNorm.isNotEmpty && newNorm.isNotEmpty) {
+      // Normal cumulative partial: the provider extends what it already sent.
+      if (_isPrefix(oldNorm, newNorm)) return newText;
+
+      // Provider briefly regressed to a shorter partial. Keep the longer text.
+      if (_isPrefix(newNorm, oldNorm)) return oldText;
+
+      // Same cumulative hypothesis with a revised tail. Prefer the longer/newer
+      // form, but preserve the previous one if the provider shortened it.
+      final minLength =
+          oldNorm.length < newNorm.length ? oldNorm.length : newNorm.length;
+      var commonPrefix = 0;
+      while (commonPrefix < minLength &&
+          oldNorm[commonPrefix] == newNorm[commonPrefix]) {
+        commonPrefix++;
+      }
+      if (commonPrefix >= 2 && commonPrefix * 2 >= minLength) {
+        return newNorm.length >= oldNorm.length ? newText : oldText;
+      }
+    }
+
+    // Rolling-chunk mode: append only the non-overlapping tail.
+    final maxOverlap =
+        oldWords.length < newWords.length ? oldWords.length : newWords.length;
     var overlap = 0;
     for (var count = maxOverlap; count > 0; count--) {
       var same = true;
@@ -215,17 +253,12 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
       onError: (error) {
         final message = error.errorMsg;
 
-        // A provider can terminate without marking its latest partial result as
-        // final. Commit that partial before any recovery action so a long Hifz
-        // session never jumps backwards after Android restarts recognition.
+        // Android can terminate a session without marking the latest partial
+        // as final. Preserve it before any recovery path.
         _commitCurrentSegment();
 
         if (!_keepListening) {
-          _emit(_state.copyWith(
-            listening: false,
-            transcript: _combinedTranscript,
-            error: message,
-          ));
+          _emit(_state.copyWith(listening: false, error: message));
           return;
         }
 
@@ -272,8 +305,6 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
       onStatus: (status) {
         if (!_keepListening) return;
         if (status == 'done' || status == 'notListening') {
-          // Some Android providers end a segment without emitting finalResult.
-          // Preserve the last partial hypothesis before opening the next one.
           _commitCurrentSegment();
 
           // Do not change the app UI to Ready here. The platform session ended,
@@ -324,7 +355,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
 
       try {
         await _begin(onDevice: false);
-      } catch (_) {
+      } catch (e) {
         if (!_keepListening) return;
         _scheduleRestart(
           delay: const Duration(milliseconds: 1200),
@@ -337,26 +368,21 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
   Future<void> _tryNextArabicLocale() async {
     if (!_keepListening || _switchingLocale) return;
 
-    // A stray Latin/transliterated result can happen during background noise,
-    // a long madd, or a brief recognition glitch. It must never terminate a
-    // long memorization test. We can still try another installed Arabic locale,
-    // but exhausting the list is a recoverable condition, not a session stop.
+    // Only switch after sustained Latin-only output. If this phone exposes no
+    // alternate Arabic locale, do not restart or stop the session: just keep
+    // listening and wait for Arabic results to return.
     if (_localeIndex + 1 >= _arabicLocales.length) {
-      _localeIndex = 0;
-      _latinOnlyStreak++;
-      if (_latinOnlyStreak >= 3) {
-        _emit(_state.copyWith(
-          listening: true,
-          transcript: _combinedTranscript,
-          error:
-              'Having trouble hearing Arabic clearly. Still listening — keep reciting, or check your phone speech-recognition language settings if this keeps happening.',
-        ));
-      }
-    } else {
-      _localeIndex++;
+      _emit(_state.copyWith(
+        listening: true,
+        transcript: _combinedTranscript,
+        error:
+            'Having trouble hearing Arabic clearly. Still listening — keep reciting.',
+      ));
+      return;
     }
 
     _switchingLocale = true;
+    _localeIndex++;
     _commitCurrentSegment();
     try {
       await _speech.cancel().timeout(const Duration(seconds: 1));
@@ -384,7 +410,13 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
           final looksLatinOnly = !isArabic && _containsLatinLetters(raw);
 
           if (looksLatinOnly) {
-            if (result.finalResult) unawaited(_tryNextArabicLocale());
+            if (result.finalResult) {
+              _latinOnlyStreak++;
+              if (_latinOnlyStreak >= 3) {
+                _latinOnlyStreak = 0;
+                unawaited(_tryNextArabicLocale());
+              }
+            }
             return;
           }
 
@@ -392,7 +424,11 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
 
           _busyRetries = 0;
           _latinOnlyStreak = 0;
-          _currentSegment = raw;
+
+          // Never replace the whole live segment with a later partial. Some
+          // Android providers send rolling chunks rather than cumulative text;
+          // replacing here is what made previously revealed Qur'an words vanish.
+          _currentSegment = _mergeText(_currentSegment, raw);
 
           if (result.finalResult) {
             _commitCurrentSegment();
@@ -407,9 +443,8 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
           ));
         },
         listenFor: const Duration(minutes: 5),
-        // Natural pauses are allowed. If the OEM/provider imposes a shorter
-        // limit anyway, the checkpoint logic above preserves everything heard
-        // and continues automatically in the next provider segment.
+        // A longer pause window reduces premature session termination during
+        // natural breathing or hesitation in memorized recitation.
         pauseFor: const Duration(seconds: 12),
         localeId: _activeLocale,
         partialResults: true,
