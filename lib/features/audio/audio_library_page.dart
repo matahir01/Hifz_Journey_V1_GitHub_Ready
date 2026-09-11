@@ -44,14 +44,21 @@ class _AudioLibraryPageState extends State<AudioLibraryPage> {
         ayahs,
         reciter: controller.reciter,
         onProgress: (done, all) {
-          if (mounted) setState(() { completed = done; total = all; });
+          if (mounted) {
+            setState(() {
+              completed = done;
+              total = all;
+            });
+          }
         },
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Downloaded ${result.downloaded}. Already offline ${result.alreadyAvailable}. Failed ${result.failed}.',
+            'Downloaded ${result.downloaded}. '
+            '${result.alreadyAvailable} already saved. '
+            '${result.failed} failed.',
           ),
         ),
       );
@@ -70,7 +77,8 @@ class _AudioLibraryPageState extends State<AudioLibraryPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Imported ${result.imported} audio files. ${result.skipped} skipped.',
+            'Imported ${result.imported} audio files. '
+            '${result.skipped} skipped.',
           ),
         ),
       );
@@ -83,6 +91,7 @@ class _AudioLibraryPageState extends State<AudioLibraryPage> {
   Widget build(BuildContext context) {
     final controller = context.watch<AppController>();
     final reciter = controller.reciter;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Reciter & audio')),
       body: ListView(
@@ -95,12 +104,11 @@ class _AudioLibraryPageState extends State<AudioLibraryPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Al Quran Cloud audio',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Stream verse-by-verse from Islamic Network CDN, or download a Surah for offline use. Downloaded ayahs are automatically preferred.',
+                    'Reciter',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 20,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
@@ -113,14 +121,18 @@ class _AudioLibraryPageState extends State<AudioLibraryPage> {
                         .map(
                           (r) => DropdownMenuItem(
                             value: r.id,
-                            child: Text('${r.name} • ${r.bitrateKbps} kbps'),
+                            child: Text(
+                              '${r.name} • ${r.bitrateKbps} kbps',
+                            ),
                           ),
                         )
                         .toList(),
                     onChanged: downloading
                         ? null
                         : (value) {
-                            if (value != null) controller.setReciter(value);
+                            if (value != null) {
+                              controller.setReciter(value);
+                            }
                           },
                   ),
                 ],
@@ -136,14 +148,19 @@ class _AudioLibraryPageState extends State<AudioLibraryPage> {
                 children: [
                   const Text(
                     'Download a Surah',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 17,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   FutureBuilder<List<Surah>>(
                     future: surahs,
                     builder: (context, snapshot) {
                       final values = snapshot.data ?? const <Surah>[];
-                      if (values.isEmpty) return const LinearProgressIndicator();
+                      if (values.isEmpty) {
+                        return const LinearProgressIndicator();
+                      }
                       return DropdownButtonFormField<int>(
                         initialValue: selectedSurah,
                         decoration: const InputDecoration(
@@ -160,7 +177,9 @@ class _AudioLibraryPageState extends State<AudioLibraryPage> {
                             .toList(),
                         onChanged: downloading
                             ? null
-                            : (value) => setState(() => selectedSurah = value ?? 1),
+                            : (value) => setState(
+                                  () => selectedSurah = value ?? 1,
+                                ),
                       );
                     },
                   ),
@@ -177,7 +196,9 @@ class _AudioLibraryPageState extends State<AudioLibraryPage> {
                     onPressed: downloading ? null : _downloadSurah,
                     icon: const Icon(Icons.download_for_offline_outlined),
                     label: Text(
-                      downloading ? 'Downloading…' : 'Download for offline use',
+                      downloading
+                          ? 'Downloading…'
+                          : 'Download for offline use',
                     ),
                   ),
                 ],
@@ -186,30 +207,34 @@ class _AudioLibraryPageState extends State<AudioLibraryPage> {
           ),
           const SizedBox(height: 14),
           FutureBuilder<int>(
-            future: context.read<AudioLibraryService>().count(reciterId: reciter.id),
+            future: context
+                .read<AudioLibraryService>()
+                .count(reciterId: reciter.id),
             builder: (context, snapshot) => Card(
               child: ListTile(
                 leading: const Icon(Icons.offline_pin_outlined),
-                title: Text('${snapshot.data ?? 0} ayahs saved for ${reciter.name}'),
-                subtitle: const Text('Saved inside Hifz Journey private app storage.'),
+                title: Text(
+                  '${snapshot.data ?? 0} ayahs saved for ${reciter.name}',
+                ),
               ),
             ),
           ),
           const SizedBox(height: 14),
           ExpansionTile(
-            title: const Text('Import your own audio pack'),
-            subtitle: const Text('Optional fallback for files you already have permission to use.'),
+            title: const Text('Import audio pack'),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             children: [
               const Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Supported names: 001001.mp3 or 1_1.mp3.'),
+                child: Text('Supported names: 001001.mp3 or 1_1.mp3'),
               ),
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 onPressed: importing ? null : _import,
                 icon: const Icon(Icons.library_music_outlined),
-                label: Text(importing ? 'Importing…' : 'Import audio pack'),
+                label: Text(
+                  importing ? 'Importing…' : 'Import audio pack',
+                ),
               ),
             ],
           ),
@@ -218,7 +243,6 @@ class _AudioLibraryPageState extends State<AudioLibraryPage> {
             child: ListTile(
               leading: const Icon(Icons.delete_outline),
               title: Text('Remove ${reciter.name} downloads'),
-              subtitle: const Text('Streaming, Qur’an text and Hifz progress are not affected.'),
               onTap: downloading
                   ? null
                   : () async {
@@ -226,7 +250,9 @@ class _AudioLibraryPageState extends State<AudioLibraryPage> {
                         context: context,
                         builder: (c) => AlertDialog(
                           title: const Text('Remove downloaded audio?'),
-                          content: Text('Delete downloaded audio for ${reciter.name}?'),
+                          content: Text(
+                            'Delete downloaded audio for ${reciter.name}?',
+                          ),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(c, false),
@@ -247,11 +273,6 @@ class _AudioLibraryPageState extends State<AudioLibraryPage> {
                       }
                     },
             ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Online recitation uses Al Quran Cloud / Islamic Network CDN. No account or API secret is required. Before public distribution, verify the provider’s current usage and redistribution terms for offline downloads.',
-            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
