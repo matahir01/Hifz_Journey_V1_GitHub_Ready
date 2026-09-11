@@ -23,19 +23,21 @@ void main() {
       expectedText: 'الٓمٓ',
       transcript: 'ألف لام ميم',
     );
-    expect(result.correctWords, 3);
+    expect(result.correctWords, 1);
+    expect(result.words.single.expected, 'الم');
     expect(result.missingWords, 0);
     expect(result.substitutedWords, 0);
     expect(result.score, 1.0);
   });
 
-  test('compact and spoken Muqattaat forms compare equally', () {
+  test('Kaf Ha Ya Ain Sad matches spoken letter names', () {
     const comparator = RecitationComparator();
     final result = comparator.compare(
       expectedText: 'كهيعص',
       transcript: 'كاف ها يا عين صاد',
     );
-    expect(result.correctWords, 5);
+    expect(result.correctWords, 1);
+    expect(result.words.single.expected, 'كهيعص');
     expect(result.score, 1.0);
   });
 }
