@@ -16,4 +16,26 @@ void main() {
     expect(result.substitutedWords, 1);
     expect(result.score, closeTo(0.75, 0.001));
   });
+
+  test('Alif Lam Mim matches spoken letter names', () {
+    const comparator = RecitationComparator();
+    final result = comparator.compare(
+      expectedText: 'الٓمٓ',
+      transcript: 'ألف لام ميم',
+    );
+    expect(result.correctWords, 3);
+    expect(result.missingWords, 0);
+    expect(result.substitutedWords, 0);
+    expect(result.score, 1.0);
+  });
+
+  test('compact and spoken Muqattaat forms compare equally', () {
+    const comparator = RecitationComparator();
+    final result = comparator.compare(
+      expectedText: 'كهيعص',
+      transcript: 'كاف ها يا عين صاد',
+    );
+    expect(result.correctWords, 5);
+    expect(result.score, 1.0);
+  });
 }
