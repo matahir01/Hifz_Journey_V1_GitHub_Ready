@@ -129,8 +129,6 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
         );
       }
 
-      // A platform speech session is allowed to end without ending the Hifz
-      // test. Only _finishSession() creates the final score.
       if (finalizing && !state.listening && transcript.isNotEmpty) {
         finalComparison = comparator.compare(
           expectedText: expectedText,
@@ -349,9 +347,10 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
                             const SizedBox(height: 18),
                             if (textHidden)
                               _LiveReveal(
-                                comparison:
-                                    finalComparison ?? liveComparison,
+                                expectedText: expectedText,
+                                comparison: finalComparison ?? liveComparison,
                                 listening: listening,
+                                finalized: finalComparison != null,
                               )
                             else
                               Text(
@@ -484,90 +483,96 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
 }
 
 class _LiveReveal extends StatelessWidget {
+  final String expectedText;
   final RecitationComparison? comparison;
   final bool listening;
+  final bool finalized;
 
-  const _LiveReveal({required this.comparison, required this.listening});
+  const _LiveReveal({
+    required this.expectedText,
+    required this.comparison,
+    required this.listening,
+    required this.finalized,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final expectedWords = QuranTextNormalizer.words(expectedText);
+    final assessed = comparison?.words ?? const <WordAssessment>[];
 
-    if (comparison == null || comparison!.words.isEmpty) {
-      return SizedBox(
-        height: 150,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.visibility_off_outlined,
-                size: 46,
-                color: scheme.outline,
-              ),
-              const SizedBox(height: 10),
-              Text(listening
-                  ? 'Recite to reveal each word'
-                  : 'Passage hidden until you recite'),
-            ],
-          ),
-        ),
-      );
+    final assessmentByIndex = <int, WordAssessment>{};
+    for (var i = 0; i < assessed.length && i < expectedWords.length; i++) {
+      assessmentByIndex[i] = assessed[i];
     }
 
-    return Wrap(
-      textDirection: TextDirection.rtl,
-      alignment: WrapAlignment.end,
-      spacing: 6,
-      runSpacing: 8,
-      children: comparison!.words.map((word) {
-        final isCorrect = word.state == WordAssessmentState.correct;
-        final isWrong = word.state == WordAssessmentState.substituted;
-        final isMissing = word.state == WordAssessmentState.missing;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          textDirection: TextDirection.rtl,
+          alignment: WrapAlignment.end,
+          spacing: 7,
+          runSpacing: 9,
+          children: List.generate(expectedWords.length, (index) {
+            final expected = expectedWords[index];
+            final word = assessmentByIndex[index];
+            final isCorrect = word?.state == WordAssessmentState.correct;
+            final showError = finalized &&
+                (word?.state == WordAssessmentState.substituted ||
+                    word?.state == WordAssessmentState.missing);
+            final revealText = isCorrect || showError;
 
-        final Color background;
-        final Color foreground;
-        final Border? border;
+            if (!revealText) {
+              final width = (expected.length * 13.0 + 28).clamp(54.0, 150.0);
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                width: width,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: scheme.onSurface.withValues(alpha: .82),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+              );
+            }
 
-        if (isCorrect) {
-          background = scheme.primaryContainer;
-          foreground = scheme.onPrimaryContainer;
-          border = null;
-        } else if (isWrong || isMissing) {
-          background = scheme.errorContainer;
-          foreground = scheme.onErrorContainer;
-          border = null;
-        } else {
-          background = Colors.transparent;
-          foreground = scheme.outline.withValues(alpha: .18);
-          border = Border.all(
-            color: scheme.outlineVariant.withValues(alpha: .12),
-          );
-        }
+            final background = isCorrect
+                ? scheme.primaryContainer
+                : scheme.errorContainer;
+            final foreground = isCorrect
+                ? scheme.onPrimaryContainer
+                : scheme.onErrorContainer;
 
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(8),
-            border: border,
-          ),
-          child: Text(
-            word.expected,
-            textDirection: TextDirection.rtl,
-            style: TextStyle(
-              fontSize: 27,
-              height: 1.7,
-              color: foreground,
-              fontWeight: isCorrect ? FontWeight.w700 : FontWeight.normal,
-              decoration: isWrong || isMissing
-                  ? TextDecoration.underline
-                  : null,
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: background,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(
+                expected,
+                textDirection: TextDirection.rtl,
+                style: TextStyle(
+                  fontSize: 27,
+                  height: 1.55,
+                  color: foreground,
+                  fontWeight: isCorrect ? FontWeight.w700 : FontWeight.w600,
+                  decoration: showError ? TextDecoration.underline : null,
+                ),
+              ),
+            );
+          }),
+        ),
+        if (expectedWords.isEmpty) ...[
+          const SizedBox(height: 28),
+          Center(
+            child: Text(
+              listening ? 'Recite to reveal the passage' : 'Passage hidden',
             ),
           ),
-        );
-      }).toList(),
+        ],
+      ],
     );
   }
 }
