@@ -81,6 +81,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
   String _currentSegment = '';
   Timer? _restartTimer;
   int _busyRetries = 0;
+  int _latinOnlyStreak = 0;
 
   @override
   Stream<RecitationRecognitionState> get states => _controller.stream;
@@ -335,19 +336,27 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
 
   Future<void> _tryNextArabicLocale() async {
     if (!_keepListening || _switchingLocale) return;
+
+    // A stray Latin/transliterated result can happen during background noise,
+    // a long madd, or a brief recognition glitch. It must never terminate a
+    // long memorization test. We can still try another installed Arabic locale,
+    // but exhausting the list is a recoverable condition, not a session stop.
     if (_localeIndex + 1 >= _arabicLocales.length) {
-      _emit(_state.copyWith(
-        listening: false,
-        transcript: _combinedTranscript,
-        error:
-            'The phone speech service returned Latin transliteration instead of Arabic text. Arabic recognition is enabled, but this speech provider is not returning Arabic script to Hifz Journey.',
-      ));
-      _keepListening = false;
-      return;
+      _localeIndex = 0;
+      _latinOnlyStreak++;
+      if (_latinOnlyStreak >= 3) {
+        _emit(_state.copyWith(
+          listening: true,
+          transcript: _combinedTranscript,
+          error:
+              'Having trouble hearing Arabic clearly. Still listening — keep reciting, or check your phone speech-recognition language settings if this keeps happening.',
+        ));
+      }
+    } else {
+      _localeIndex++;
     }
 
     _switchingLocale = true;
-    _localeIndex++;
     _commitCurrentSegment();
     try {
       await _speech.cancel().timeout(const Duration(seconds: 1));
@@ -382,6 +391,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
           if (!isArabic) return;
 
           _busyRetries = 0;
+          _latinOnlyStreak = 0;
           _currentSegment = raw;
 
           if (result.finalResult) {
@@ -436,6 +446,7 @@ class DeviceArabicRecitationRecognizer implements RecitationRecognizer {
     _currentSegment = '';
     _localeIndex = 0;
     _busyRetries = 0;
+    _latinOnlyStreak = 0;
     _keepListening = true;
     _emit(_state.copyWith(
       listening: true,
