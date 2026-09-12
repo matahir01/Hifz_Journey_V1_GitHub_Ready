@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/settings/settings_service.dart';
 import '../../data/models/surah.dart';
 import '../../data/repositories/quran_repository.dart';
 import '../shell/app_controller.dart';
@@ -14,7 +15,8 @@ class OnboardingPage extends StatefulWidget {
 
 class _OnboardingPageState extends State<OnboardingPage> {
   int step = 0;
-  int target = 3;
+  HifzTargetUnit targetUnit = HifzTargetUnit.ayahs;
+  int targetAmount = 3;
   int surahId = 1;
   TimeOfDay reminder = const TimeOfDay(hour: 7, minute: 0);
   late Future<List<Surah>> surahs;
@@ -29,11 +31,14 @@ class _OnboardingPageState extends State<OnboardingPage> {
     final quran = context.read<QuranRepository>();
     final ayahs = await quran.ayahsForSurah(surahId);
     if (ayahs.isEmpty || !mounted) return;
-    await context.read<AppController>().completeOnboarding(
-          target: target,
-          startId: ayahs.first.id,
-          reminder: reminder,
-        );
+
+    final controller = context.read<AppController>();
+    await controller.completeOnboarding(
+      target: targetAmount,
+      startId: ayahs.first.id,
+      reminder: reminder,
+    );
+    await controller.setHifzTarget(targetUnit, targetAmount);
   }
 
   @override
@@ -151,8 +156,33 @@ class _OnboardingPageState extends State<OnboardingPage> {
         },
       );
 
-  Widget _dailyPlan() => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _targetChoice(
+    String label,
+    HifzTargetUnit unit, {
+    int? fixed,
+  }) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: targetUnit == unit && (fixed == null || targetAmount == fixed),
+      onSelected: (_) => setState(() {
+        targetUnit = unit;
+        if (fixed != null) targetAmount = fixed;
+      }),
+    );
+  }
+
+  String get _targetLabel => switch (targetUnit) {
+        HifzTargetUnit.ayahs =>
+          '$targetAmount ayah${targetAmount == 1 ? '' : 's'} per day',
+        HifzTargetUnit.pages =>
+          '$targetAmount page${targetAmount == 1 ? '' : 's'} per day',
+        HifzTargetUnit.thumun => 'Thumun (⅛ Hizb) per day',
+        HifzTargetUnit.quarterHizb => '¼ Hizb per day',
+        HifzTargetUnit.halfHizb => '½ Hizb per day',
+        HifzTargetUnit.hizb => '1 Hizb per day',
+      };
+
+  Widget _dailyPlan() => ListView(
         children: [
           Text(
             'Set a sustainable daily plan.',
@@ -161,20 +191,53 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 .headlineMedium
                 ?.copyWith(fontWeight: FontWeight.w800),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 10),
+          const Text('Choose the same Hifz target options available in Settings.'),
+          const SizedBox(height: 22),
           Text(
-            'New ayahs per day: $target',
-            style: Theme.of(context).textTheme.titleLarge,
+            _targetLabel,
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.w800),
           ),
-          Slider(
-            value: target.toDouble(),
-            min: 2,
-            max: 10,
-            divisions: 8,
-            label: '$target',
-            onChanged: (v) => setState(() => target = v.round()),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _targetChoice('3 ayahs', HifzTargetUnit.ayahs, fixed: 3),
+              _targetChoice('4 ayahs', HifzTargetUnit.ayahs, fixed: 4),
+              _targetChoice('5 ayahs', HifzTargetUnit.ayahs, fixed: 5),
+              _targetChoice('1 page', HifzTargetUnit.pages, fixed: 1),
+              _targetChoice('2 pages', HifzTargetUnit.pages, fixed: 2),
+              _targetChoice('Thumun', HifzTargetUnit.thumun, fixed: 1),
+              _targetChoice('¼ Hizb', HifzTargetUnit.quarterHizb, fixed: 1),
+              _targetChoice('½ Hizb', HifzTargetUnit.halfHizb, fixed: 1),
+              _targetChoice('1 Hizb', HifzTargetUnit.hizb, fixed: 1),
+            ],
           ),
-          const SizedBox(height: 20),
+          if (targetUnit == HifzTargetUnit.ayahs) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Text('Custom'),
+                Expanded(
+                  child: Slider(
+                    value: targetAmount.clamp(1, 20).toDouble(),
+                    min: 1,
+                    max: 20,
+                    divisions: 19,
+                    label: '$targetAmount',
+                    onChanged: (v) =>
+                        setState(() => targetAmount = v.round()),
+                  ),
+                ),
+                SizedBox(width: 34, child: Text('$targetAmount')),
+              ],
+            ),
+          ],
+          const SizedBox(height: 18),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.notifications_active_outlined),
@@ -189,13 +252,14 @@ class _OnboardingPageState extends State<OnboardingPage> {
               if (t != null) setState(() => reminder = t);
             },
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           const Card(
             child: Padding(
               padding: EdgeInsets.all(16),
               child: Text('Revision → New memorization → Recall'),
             ),
           ),
+          const SizedBox(height: 8),
         ],
       );
 }
