@@ -5,6 +5,7 @@ import '../../core/audio/audio_library_service.dart';
 import '../../core/audio/audio_service.dart';
 import '../../core/settings/settings_service.dart';
 import '../../data/models/ayah.dart';
+import '../../data/models/surah.dart';
 import '../../data/repositories/hifz_repository.dart';
 import '../../data/repositories/quran_repository.dart';
 import '../recitation/ai_recitation_test_page.dart';
@@ -26,7 +27,7 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
   bool hidden = false;
   bool playing = false;
   int? activeAyahId;
-  late Future<List<Ayah>> session;
+  late Future<_HifzSessionData> session;
 
   @override
   void initState() {
@@ -56,18 +57,56 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
         _ => 0,
       };
 
-  Future<List<Ayah>> _loadSession() async {
+  Future<_HifzSessionData> _loadSession() async {
     final quran = context.read<QuranRepository>();
     final hifz = context.read<HifzRepository>();
     final controller = context.read<AppController>();
     final cursor =
         await hifz.lastIntroducedAyahId() ?? (controller.startAyahId - 1);
+
+    late final List<Ayah> ayahs;
     if (kind == HifzTargetUnit.ayahs) {
-      return quran.nextAyahs(cursor, amount);
+      ayahs = await quran.nextAyahs(cursor, amount);
+    } else {
+      final first = await quran.ayah((cursor + 1).clamp(1, 6236).toInt());
+      if (first == null) return const _HifzSessionData.empty();
+      ayahs = await quran.ayahsForPages(first.page, _pageCount);
     }
-    final first = await quran.ayah((cursor + 1).clamp(1, 6236).toInt());
-    if (first == null) return const [];
-    return quran.ayahsForPages(first.page, _pageCount);
+
+    if (ayahs.isEmpty) return const _HifzSessionData.empty();
+
+    final relevantSurahIds = ayahs.map((a) => a.surahId).toSet();
+    final allSurahs = await quran.surahs();
+    final surahs = <int, Surah>{
+      for (final surah in allSurahs)
+        if (relevantSurahIds.contains(surah.id)) surah.id: surah,
+    };
+
+    final grouped = <int, List<Ayah>>{};
+    for (final ayah in ayahs) {
+      grouped.putIfAbsent(ayah.page, () => <Ayah>[]).add(ayah);
+    }
+
+    final sections = <_HifzPageSection>[];
+    for (final entry in grouped.entries) {
+      final fullPage = await quran.ayahsForPage(entry.key);
+      final pageCompleted = fullPage.isNotEmpty &&
+          entry.value.isNotEmpty &&
+          entry.value.last.id == fullPage.last.id;
+      sections.add(
+        _HifzPageSection(
+          page: entry.key,
+          ayahs: List.unmodifiable(entry.value),
+          pageCompleted: pageCompleted,
+        ),
+      );
+    }
+
+    return _HifzSessionData(
+      ayahs: List.unmodifiable(ayahs),
+      sections: List.unmodifiable(sections),
+      surahs: Map.unmodifiable(surahs),
+    );
   }
 
   void _reload() => setState(() => session = _loadSession());
@@ -129,18 +168,74 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
     }
   }
 
-  Future<void> _testSession(List<Ayah> ayahs) async {
-    if (ayahs.isEmpty) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AiRecitationTestPage(
-          ayahIds: ayahs.map((a) => a.id).toList(growable: false),
-          title: 'Test today’s Hifz',
+  Future<void> _testSession(_HifzSessionData data) async {
+    if (data.ayahs.isEmpty || data.sections.isEmpty) return;
+
+    if (data.sections.length > 1) {
+      final start = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Page-by-page Hifz test'),
+          content: Text(
+            'Today’s memorization crosses ${data.sections.length} Mushaf pages. '
+            'You will test each page separately so every completed page is clear.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text('Start Page ${data.sections.first.page}'),
+            ),
+          ],
         ),
-      ),
-    );
-    if (mounted) await context.read<AppController>().refresh();
+      );
+      if (start != true || !mounted) return;
+    }
+
+    for (var i = 0; i < data.sections.length; i++) {
+      if (!mounted) return;
+      final section = data.sections[i];
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AiRecitationTestPage(
+            ayahIds: section.ayahs.map((a) => a.id).toList(growable: false),
+            title: data.sections.length == 1
+                ? 'Test Page ${section.page}'
+                : 'Page ${section.page} • ${i + 1} of ${data.sections.length}',
+          ),
+        ),
+      );
+      if (!mounted) return;
+      await context.read<AppController>().refresh();
+
+      if (i < data.sections.length - 1) {
+        final next = data.sections[i + 1];
+        final continueTest = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text('Page ${section.page} finished'),
+            content: Text(
+              'Continue with Page ${next.page}? Your Hifz test stays separated by Mushaf page.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Stop for now'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text('Test Page ${next.page}'),
+              ),
+            ],
+          ),
+        );
+        if (continueTest != true) break;
+      }
+    }
   }
 
   Future<void> _chooseTarget() async {
@@ -268,6 +363,177 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
     _reload();
   }
 
+  Widget _pageSection(
+    BuildContext context,
+    _HifzPageSection section,
+    _HifzSessionData data,
+    int index,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final surahNames = <String>[];
+    for (final ayah in section.ayahs) {
+      final name = data.surahs[ayah.surahId]?.nameEn ?? 'Surah ${ayah.surahId}';
+      if (!surahNames.contains(name)) surahNames.add(name);
+    }
+
+    final children = <Widget>[];
+    int? previousSurahId;
+    for (final ayah in section.ayahs) {
+      final surah = data.surahs[ayah.surahId];
+      if (previousSurahId != ayah.surahId) {
+        children.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10, top: 2),
+            child: Text(
+              surah == null ? 'Surah ${ayah.surahId}' : surah.nameEn,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: scheme.primary,
+                  ),
+            ),
+          ),
+        );
+        previousSurahId = ayah.surahId;
+      }
+
+      children.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: activeAyahId == ayah.id
+                  ? scheme.primaryContainer.withValues(alpha: .38)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: AnimatedOpacity(
+                opacity: hidden ? .04 : 1,
+                duration: const Duration(milliseconds: 180),
+                child: Text(
+                  '${ayah.textUthmani}  ﴿${ayah.ayahNumber}﴾',
+                  textAlign: TextAlign.right,
+                  textDirection: TextDirection.rtl,
+                  style: const TextStyle(
+                    fontSize: 28,
+                    height: 1.9,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      if (surah != null && ayah.ayahNumber == surah.ayahCount) {
+        children.add(
+          Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: scheme.secondaryContainer.withValues(alpha: .55),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: scheme.secondary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${surah.nameEn} completed',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    }
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            color: scheme.surfaceContainerHighest.withValues(alpha: .55),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '${section.page}',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Mushaf Page ${section.page}',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${surahNames.join(' → ')}  •  ${section.ayahs.length} ayah${section.ayahs.length == 1 ? '' : 's'}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                if (data.sections.length > 1)
+                  Text(
+                    '${index + 1}/${data.sections.length}',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: children,
+            ),
+          ),
+          if (section.pageCompleted)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              color: scheme.primaryContainer.withValues(alpha: .42),
+              child: Row(
+                children: [
+                  Icon(Icons.task_alt_rounded, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Page ${section.page} completed — next memorization enters Page ${section.page + 1}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<AppController>();
@@ -284,13 +550,14 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
           ),
         ],
       ),
-      body: FutureBuilder<List<Ayah>>(
+      body: FutureBuilder<_HifzSessionData>(
         future: session,
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final ayahs = snapshot.data!;
+          final data = snapshot.data!;
+          final ayahs = data.ayahs;
           final first = ayahs.isEmpty ? null : ayahs.first;
           final last = ayahs.isEmpty ? null : ayahs.last;
           return ListView(
@@ -344,6 +611,16 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
                       Text(
                         '${first.surahId}:${first.ayahNumber}  →  '
                         '${last.surahId}:${last.ayahNumber}  •  ${ayahs.length} ayahs',
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        first.page == last.page
+                            ? 'Mushaf Page ${first.page}'
+                            : 'Mushaf Pages ${first.page}–${last.page} • ${data.sections.length} page sections',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: scheme.primary,
+                            ),
                       ),
                     ],
                   ],
@@ -435,52 +712,18 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
                 ),
               ),
               const SizedBox(height: 14),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
-                  child: AnimatedOpacity(
-                    opacity: hidden ? .04 : 1,
-                    duration: const Duration(milliseconds: 180),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: ayahs
-                          .map(
-                            (ayah) => Padding(
-                              padding: const EdgeInsets.only(bottom: 16),
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: activeAyahId == ayah.id
-                                      ? scheme.primaryContainer
-                                          .withValues(alpha: .38)
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Text(
-                                    '${ayah.textUthmani}  ﴿${ayah.ayahNumber}﴾',
-                                    textAlign: TextAlign.right,
-                                    textDirection: TextDirection.rtl,
-                                    style: const TextStyle(
-                                      fontSize: 28,
-                                      height: 1.9,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
+              for (var i = 0; i < data.sections.length; i++) ...[
+                _pageSection(context, data.sections[i], data, i),
+                const SizedBox(height: 12),
+              ],
               FilledButton.icon(
-                onPressed:
-                    ayahs.isEmpty ? null : () => _testSession(ayahs),
+                onPressed: ayahs.isEmpty ? null : () => _testSession(data),
                 icon: const Icon(Icons.mic_rounded),
-                label: const Text('Test my memorization'),
+                label: Text(
+                  data.sections.length > 1
+                      ? 'Test page by page'
+                      : 'Test my memorization',
+                ),
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(58),
                 ),
@@ -491,4 +734,33 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
       ),
     );
   }
+}
+
+class _HifzSessionData {
+  final List<Ayah> ayahs;
+  final List<_HifzPageSection> sections;
+  final Map<int, Surah> surahs;
+
+  const _HifzSessionData({
+    required this.ayahs,
+    required this.sections,
+    required this.surahs,
+  });
+
+  const _HifzSessionData.empty()
+      : ayahs = const [],
+        sections = const [],
+        surahs = const {};
+}
+
+class _HifzPageSection {
+  final int page;
+  final List<Ayah> ayahs;
+  final bool pageCompleted;
+
+  const _HifzPageSection({
+    required this.page,
+    required this.ayahs,
+    required this.pageCompleted,
+  });
 }
