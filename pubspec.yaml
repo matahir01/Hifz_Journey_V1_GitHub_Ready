@@ -23,6 +23,10 @@ dependencies:
   intl: ^0.20.3
   speech_to_text: ^7.4.0
 
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
 flutter:
   uses-material-design: true
   assets:
