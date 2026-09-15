@@ -118,16 +118,55 @@ class _SurahTab extends StatelessWidget {
           itemBuilder: (context, index) {
             final surah = surahs[index];
             return ListTile(
-              leading: CircleAvatar(child: Text('${surah.id}')),
+              leading: SizedBox(
+                width: 46,
+                height: 46,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CircularProgressIndicator(
+                      value: 0,
+                      strokeWidth: 3,
+                      backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: .12),
+                    ),
+                    Center(
+                      child: Text(
+                        '${surah.id}',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               title: Text(
                 surah.nameEn,
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
-              subtitle: Text('${surah.translit} • ${surah.ayahCount} ayahs'),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 5),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(surah.translit),
+                    _MetadataPill(label: surah.type),
+                    _MetadataPill(label: '${surah.ayahCount} ayahs'),
+                  ],
+                ),
+              ),
               trailing: Text(
                 surah.nameAr,
                 textDirection: TextDirection.rtl,
-                style: const TextStyle(fontSize: 21),
+                style: const TextStyle(
+                  fontSize: 23,
+                  height: 1.6,
+                  fontFamily: 'serif',
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               onTap: () async {
                 final first = await context
@@ -256,4 +295,26 @@ class _PageTab extends StatelessWidget {
       },
     );
   }
+}
+
+
+class _MetadataPill extends StatelessWidget {
+  final String label;
+  const _MetadataPill({required this.label});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+      );
 }
