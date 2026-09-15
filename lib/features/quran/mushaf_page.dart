@@ -60,8 +60,19 @@ class _MushafPageState extends State<MushafPage> {
       final surah = await quran.surah(id);
       if (surah != null) surahs[id] = surah;
     }
-    final tajweed = await TajweedRepository().forAyahs(ayahs);
-    return _MushafData(ayahs, surahs, tajweed);
+    final base = _MushafData(ayahs, surahs, const {});
+    unawaited(
+      TajweedRepository().forAyahs(ayahs).then((tajweed) {
+        if (!mounted || page != value) return;
+        setState(() {
+          data = Future.value(_MushafData(ayahs, surahs, tajweed));
+        });
+      }).catchError((Object _) {
+        // The bundled Tajweed layer is optional. The offline Quran text must
+        // remain available even if an asset cannot be decoded on this device.
+      }),
+    );
+    return base;
   }
 
   Future<void> _onActiveAyah(int? id) async {
@@ -283,6 +294,30 @@ class _MushafPageState extends State<MushafPage> {
       body: FutureBuilder<_MushafData>(
         future: data,
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.menu_book_outlined, size: 48),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'The Mushaf could not be opened from offline storage.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: () => setState(() => data = _loadForPage(page)),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }

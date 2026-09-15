@@ -301,13 +301,6 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title ?? 'Recitation test'),
-        actions: [
-          IconButton(
-            tooltip: textHidden ? 'Show passage' : 'Hide passage',
-            onPressed: () => setState(() => textHidden = !textHidden),
-            icon: Icon(textHidden ? Icons.visibility_off : Icons.visibility),
-          ),
-        ],
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
@@ -316,21 +309,6 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
               : ListView(
                   padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
                   children: [
-                    if (widget.cueText != null &&
-                        widget.cueText!.trim().isNotEmpty) ...[
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            widget.cueText!,
-                            textDirection: TextDirection.rtl,
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(fontSize: 24, height: 1.7),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(18),
@@ -492,9 +470,9 @@ class _CurrentWordCoach extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final words = QuranTextNormalizer.words(expectedText);
-    final cursor = comparison.nextExpectedIndex.clamp(0, words.length);
-    final remaining = (words.length - cursor).clamp(0, words.length);
+    final wordCount = QuranTextNormalizer.words(expectedText).length;
+    final cursor = comparison.nextExpectedIndex.clamp(0, wordCount);
+    final remaining = (wordCount - cursor).clamp(0, wordCount);
     final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(14),
@@ -504,12 +482,13 @@ class _CurrentWordCoach extends StatelessWidget {
         border: Border.all(color: scheme.secondary.withValues(alpha: .5)),
       ),
       child: Column(children: [
-        Text(cursor < words.length ? 'Say this word to continue' : 'Passage completed',
+        Text(cursor < wordCount ? 'Recite the next word' : 'Passage completed',
           style: TextStyle(color: scheme.secondary, fontWeight: FontWeight.w900)),
-        if (cursor < words.length)
-          Text(words[cursor], textDirection: TextDirection.rtl,
-            style: TextStyle(fontFamily: 'Noto Naskh Arabic', fontFamilyFallback: const ['serif'],
-              fontSize: 34, height: 1.4, color: scheme.primary, fontWeight: FontWeight.w800)),
+        if (cursor < wordCount)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Icon(Icons.visibility_off_outlined, size: 34),
+          ),
         Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
           _LiveMetric(label: 'Correct', value: comparison.correctWords),
           _LiveMetric(label: 'Missed', value: comparison.missingWords),
@@ -567,12 +546,11 @@ class _LiveReveal extends StatelessWidget {
             final expected = expectedWords[index];
             final word = assessmentByIndex[index];
             final isCorrect = word?.state == WordAssessmentState.correct;
-            final isCurrent = comparison != null && index == comparison!.nextExpectedIndex && !finalized;
             final showError =
                 word?.state == WordAssessmentState.missing ||
                 (finalized &&
                     word?.state == WordAssessmentState.substituted);
-            final revealText = isCorrect || showError || isCurrent;
+            final revealText = isCorrect || showError;
 
             if (!revealText) {
               final width = (expected.length * 13.0 + 28).clamp(54.0, 150.0);

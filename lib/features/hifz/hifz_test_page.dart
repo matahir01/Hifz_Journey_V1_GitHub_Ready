@@ -29,7 +29,6 @@ class _HifzTestPageState extends State<HifzTestPage> {
   int index = 0;
   int completed = 0;
   double totalScore = 0;
-  bool revealed = false;
   bool saving = false;
 
   @override
@@ -66,7 +65,6 @@ class _HifzTestPageState extends State<HifzTestPage> {
   Future<void> _listen() async {
     setState(() {
       assessment = null;
-      revealed = false;
     });
     await recognizer.start(preferOnDevice: false);
   }
@@ -106,7 +104,6 @@ class _HifzTestPageState extends State<HifzTestPage> {
     setState(() {
       saving = false;
       assessment = null;
-      revealed = false;
       speech = RecitationRecognitionState.initial().copyWith(
         available: recognizer.state.available,
       );
@@ -159,24 +156,11 @@ class _HifzTestPageState extends State<HifzTestPage> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 16),
-                if (!revealed)
-                  const Icon(Icons.visibility_off_outlined, size: 58)
-                else
-                  Text(
-                    ayah.textUthmani,
-                    textDirection: TextDirection.rtl,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(fontSize: 29, height: 1.9),
-                  ),
+                const Icon(Icons.visibility_off_outlined, size: 58),
                 const SizedBox(height: 14),
-                TextButton.icon(
-                  onPressed: () => setState(() => revealed = !revealed),
-                  icon: Icon(
-                    revealed
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                  ),
-                  label: Text(revealed ? 'Hide ayah' : 'Reveal ayah'),
+                const Text(
+                  'The ayah remains hidden until your attempt is checked.',
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
