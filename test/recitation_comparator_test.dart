@@ -40,4 +40,35 @@ void main() {
     expect(result.words.single.expected, 'كهيعص');
     expect(result.score, 1.0);
   });
+  test('live comparison cannot skip an unrecognized word', () {
+    const comparator = RecitationComparator();
+    final result = comparator.compare(
+      expectedText: 'الحمد لله رب العالمين',
+      transcript: 'الحمد رب',
+      live: true,
+    );
+
+    expect(result.words[0].state, WordAssessmentState.correct);
+    expect(result.words[1].state, WordAssessmentState.missing);
+    expect(result.words[2].state, WordAssessmentState.pending);
+    expect(result.words[3].state, WordAssessmentState.pending);
+  });
+
+  test('sequential progress resumes only after the blocked word is heard', () {
+    const comparator = RecitationComparator();
+    comparator.compare(
+      expectedText: 'بسم الله الرحمن الرحيم',
+      transcript: 'بسم الرحمن',
+      live: true,
+    );
+    final result = comparator.compare(
+      expectedText: 'بسم الله الرحمن الرحيم',
+      transcript: 'بسم الرحمن الله الرحمن الرحيم',
+      live: true,
+    );
+
+    expect(result.words[1].state, WordAssessmentState.missing);
+    expect(result.words[2].state, WordAssessmentState.correct);
+    expect(result.words[3].state, WordAssessmentState.correct);
+  });
 }

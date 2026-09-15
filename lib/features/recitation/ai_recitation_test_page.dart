@@ -518,9 +518,10 @@ class _LiveReveal extends StatelessWidget {
             final expected = expectedWords[index];
             final word = assessmentByIndex[index];
             final isCorrect = word?.state == WordAssessmentState.correct;
-            final showError = finalized &&
-                (word?.state == WordAssessmentState.substituted ||
-                    word?.state == WordAssessmentState.missing);
+            final showError =
+                word?.state == WordAssessmentState.missing ||
+                (finalized &&
+                    word?.state == WordAssessmentState.substituted);
             final revealText = isCorrect || showError;
 
             if (!revealText) {
