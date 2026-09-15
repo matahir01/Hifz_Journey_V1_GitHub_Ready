@@ -190,15 +190,9 @@ class HomePage extends StatelessWidget {
                   ),
             ),
             const SizedBox(height: 10),
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.52,
+            Column(
               children: [
-                _ActionCard(
+                _ActionTile(
                   icon: Icons.menu_book_rounded,
                   title:
                       controller.lastRead == null ? 'Start reading' : 'Ayah view',
@@ -221,7 +215,7 @@ class HomePage extends StatelessWidget {
                     }
                   },
                 ),
-                _ActionCard(
+                _ActionTile(
                   icon: Icons.psychology_alt_rounded,
                   title: 'Test centre',
                   subtitle: 'Choose what you want to test',
@@ -235,7 +229,7 @@ class HomePage extends StatelessWidget {
                     }
                   },
                 ),
-                _ActionCard(
+                _ActionTile(
                   icon: Icons.bookmarks_outlined,
                   title: 'Bookmarks',
                   subtitle: 'Return to saved ayahs',
@@ -244,7 +238,7 @@ class HomePage extends StatelessWidget {
                     MaterialPageRoute(builder: (_) => const BookmarksPage()),
                   ),
                 ),
-                _ActionCard(
+                _ActionTile(
                   icon: Icons.repeat_rounded,
                   title: 'Revision due',
                   subtitle: stats.due == 0
@@ -303,7 +297,9 @@ class _TodayCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(child: _Metric(value: '$due', label: 'Revision')),
-                Expanded(child: _Metric(value: progress, label: 'Today')),
+                Expanded(
+                  child: _ProgressRing(label: progress, complete: complete),
+                ),
                 Expanded(child: _Metric(value: '$streak', label: 'Day streak')),
               ],
             ),
@@ -351,13 +347,65 @@ class _Metric extends StatelessWidget {
       );
 }
 
-class _ActionCard extends StatelessWidget {
+class _ProgressRing extends StatelessWidget {
+  final String label;
+  final bool complete;
+
+  const _ProgressRing({required this.label, required this.complete});
+
+  double get _value {
+    final match = RegExp(r'(\d+)\s*/\s*(\d+)').firstMatch(label);
+    if (match == null) return complete ? 1 : 0;
+    final done = int.tryParse(match.group(1)!) ?? 0;
+    final goal = int.tryParse(match.group(2)!) ?? 1;
+    return goal == 0 ? 0 : (done / goal).clamp(0, 1);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      label: 'Daily goal $label',
+      child: SizedBox(
+        width: 86,
+        height: 86,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            CircularProgressIndicator(
+              value: _value,
+              strokeWidth: 8,
+              strokeCap: StrokeCap.round,
+              backgroundColor: scheme.primary.withValues(alpha: .10),
+              color: complete ? scheme.primary : const Color(0xFFC4A35A),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (complete)
+                  Icon(Icons.check_rounded, color: scheme.primary, size: 22)
+                else
+                  Text(
+                    '${(_value * 100).round()}%',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                const Text('Today', style: TextStyle(fontSize: 11)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
 
-  const _ActionCard({
+  const _ActionTile({
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -365,41 +413,44 @@ class _ActionCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Card(
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Card(
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            child: Row(
               children: [
                 Container(
-                  width: 42,
-                  height: 42,
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: .09),
-                    borderRadius: BorderRadius.circular(12),
+                    color: scheme.primary.withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(15),
                   ),
-                  child: Icon(icon, color: Theme.of(context).colorScheme.primary),
+                  child: Icon(icon, color: scheme.primary),
                 ),
-                const Spacer(),
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 2),
+                      Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                Icon(Icons.chevron_right_rounded, color: scheme.outline),
               ],
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
