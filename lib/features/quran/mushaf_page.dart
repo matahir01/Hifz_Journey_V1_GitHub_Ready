@@ -223,12 +223,21 @@ class _MushafPageState extends State<MushafPage> {
             child: Column(
               children: [
                 Expanded(
-                  child: Container(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onHorizontalDragEnd: (details) {
+                      final velocity = details.primaryVelocity ?? 0;
+                      if (velocity < -280 && page < 604) _go(page + 1);
+                      if (velocity > 280 && page > 1) _go(page - 1);
+                    },
+                    child: Container(
                     margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
                     decoration: BoxDecoration(
-                      color: scheme.surface,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: scheme.outlineVariant),
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? const Color(0xFF1A211D)
+                          : const Color(0xFFFFFDF5),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: scheme.secondary.withValues(alpha: .35)),
                       boxShadow: [
                         BoxShadow(
                           color: scheme.shadow.withValues(alpha: .06),
@@ -251,6 +260,7 @@ class _MushafPageState extends State<MushafPage> {
                       ),
                     ),
                   ),
+                ),
                 ),
                 _AudioControls(
                   reciter: controller.reciter,
@@ -316,7 +326,10 @@ class _MushafPageState extends State<MushafPage> {
   }
 
   List<Widget> _buildPageContents(BuildContext context, _MushafData data) {
-    final widgets = <Widget>[];
+    final widgets = <Widget>[
+      _PageOrnament(page: page, juz: data.ayahs.isEmpty ? 1 : data.ayahs.first.juz),
+      const SizedBox(height: 16),
+    ];
     int? activeSurah;
     final buffer = <Ayah>[];
 
@@ -483,6 +496,31 @@ class _MushafData {
   final Map<int, Surah> surahs;
 
   const _MushafData(this.ayahs, this.surahs);
+}
+
+class _PageOrnament extends StatelessWidget {
+  final int page;
+  final int juz;
+  const _PageOrnament({required this.page, required this.juz});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(children: [
+      Expanded(child: Divider(color: scheme.secondary.withValues(alpha: .45))),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Column(children: [
+          Icon(Icons.auto_awesome, size: 16, color: scheme.secondary),
+          const SizedBox(height: 3),
+          Text('JUZ $juz  ·  PAGE $page',
+            style: TextStyle(letterSpacing: 1.2, color: scheme.secondary,
+              fontSize: 11, fontWeight: FontWeight.w900)),
+        ]),
+      ),
+      Expanded(child: Divider(color: scheme.secondary.withValues(alpha: .45))),
+    ]);
+  }
 }
 
 class _SurahHeader extends StatelessWidget {

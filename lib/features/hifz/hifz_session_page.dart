@@ -24,7 +24,7 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
   late int amount;
   int repeat = 3;
   double speed = 1.0;
-  bool hidden = false;
+  int concealLevel = 0;
   bool playing = false;
   int? activeAyahId;
   late Future<_HifzSessionData> session;
@@ -110,6 +110,16 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
   }
 
   void _reload() => setState(() => session = _loadSession());
+
+  String _practiceText(Ayah ayah) {
+    if (concealLevel == 0) return '${ayah.textUthmani}  ﴿${ayah.ayahNumber}﴾';
+    final words = ayah.textUthmani.trim().split(RegExp(r'\s+'));
+    if (concealLevel == 3) return List.filled(words.length, 'ــــــ').join('  ');
+    return List.generate(words.length, (index) {
+      final visible = concealLevel == 1 ? index == 0 : index.isEven;
+      return visible ? words[index] : 'ــــــ';
+    }).join('  ');
+  }
 
   Future<void> _playSession(List<Ayah> ayahs) async {
     if (playing) {
@@ -409,11 +419,11 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
             ),
             child: Padding(
               padding: const EdgeInsets.all(8),
-              child: AnimatedOpacity(
-                opacity: hidden ? .04 : 1,
+              child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 180),
                 child: Text(
-                  '${ayah.textUthmani}  ﴿${ayah.ayahNumber}﴾',
+                  _practiceText(ayah),
+                  key: ValueKey('${ayah.id}-$concealLevel'),
                   textAlign: TextAlign.right,
                   textDirection: TextDirection.rtl,
                   style: const TextStyle(
@@ -544,9 +554,9 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
         title: const Text('Today’s Hifz'),
         actions: [
           IconButton(
-            tooltip: hidden ? 'Show text' : 'Hide text',
-            onPressed: () => setState(() => hidden = !hidden),
-            icon: Icon(hidden ? Icons.visibility : Icons.visibility_off),
+            tooltip: 'Change concealment level',
+            onPressed: () => setState(() => concealLevel = (concealLevel + 1) % 4),
+            icon: Icon(concealLevel == 0 ? Icons.visibility_outlined : Icons.visibility_off_outlined),
           ),
         ],
       ),
@@ -625,6 +635,11 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
                     ],
                   ],
                 ),
+              ),
+              const SizedBox(height: 14),
+              _PracticeSteps(
+                concealLevel: concealLevel,
+                onChanged: (value) => setState(() => concealLevel = value),
               ),
               const SizedBox(height: 14),
               Card(
@@ -731,6 +746,42 @@ class _HifzSessionPageState extends State<HifzSessionPage> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _PracticeSteps extends StatelessWidget {
+  final int concealLevel;
+  final ValueChanged<int> onChanged;
+  const _PracticeSteps({required this.concealLevel, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    const labels = ['Read', 'First-word cue', 'Partial', 'Hidden'];
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('LISTEN  →  REPEAT  →  HIDE  →  RECITE  →  CHECK',
+            style: TextStyle(fontSize: 11, letterSpacing: .7,
+              color: scheme.primary, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: List.generate(labels.length, (index) =>
+              Padding(
+                padding: const EdgeInsets.only(right: 7),
+                child: ChoiceChip(
+                  selected: concealLevel == index,
+                  onSelected: (_) => onChanged(index),
+                  label: Text(labels[index]),
+                ),
+              ),
+            )),
+          ),
+        ]),
       ),
     );
   }

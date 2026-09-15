@@ -54,7 +54,7 @@ class HomePage extends StatelessWidget {
       child: RefreshIndicator(
         onRefresh: controller.refresh,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
           children: [
             Container(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
@@ -63,11 +63,11 @@ class HomePage extends StatelessWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    scheme.primaryContainer.withValues(alpha: .75),
-                    scheme.surfaceContainerLow,
+                    scheme.primary,
+                    const Color(0xFF073E31),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(30),
+                borderRadius: BorderRadius.circular(26),
                 border: Border.all(
                   color: scheme.primary.withValues(alpha: .12),
                 ),
@@ -85,7 +85,7 @@ class HomePage extends StatelessWidget {
                             fontFamily: 'serif',
                             height: 1.7,
                             fontWeight: FontWeight.w600,
-                            color: scheme.primary,
+                            color: const Color(0xFFE5C77F),
                           ),
                     ),
                   ),
@@ -96,10 +96,11 @@ class HomePage extends StatelessWidget {
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        'Your Qur’an. Your Journey.',
+                        'Your journey today',
                         maxLines: 1,
                         softWrap: false,
                         style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                              color: Colors.white,
                               fontWeight: FontWeight.w900,
                               height: 1.08,
                             ),
@@ -110,13 +111,18 @@ class HomePage extends StatelessWidget {
                   Text(
                     'Read  ·  Memorize  ·  Revise  ·  Retain',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
+                          color: Colors.white70,
                         ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 18),
+            Text(
+              'What should I do today?',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
             _TodayCard(
               due: stats.due,
               progress: controller.todayProgressLabel,
@@ -184,7 +190,7 @@ class HomePage extends StatelessWidget {
               physics: const NeverScrollableScrollPhysics(),
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              childAspectRatio: 1.22,
+              childAspectRatio: 1.38,
               children: [
                 _ActionCard(
                   icon: Icons.menu_book_rounded,

@@ -18,6 +18,7 @@ class RecitationComparison {
   final int missingWords;
   final int substitutedWords;
   final List<WordAssessment> words;
+  final int nextExpectedIndex;
 
   const RecitationComparison({
     required this.score,
@@ -25,6 +26,7 @@ class RecitationComparison {
     required this.missingWords,
     required this.substitutedWords,
     required this.words,
+    this.nextExpectedIndex = 0,
   });
 }
 
@@ -405,6 +407,7 @@ class RecitationComparator {
       missingWords: missing,
       substitutedWords: 0,
       words: words,
+      nextExpectedIndex: cursor,
     );
   }
 

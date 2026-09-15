@@ -394,15 +394,18 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
                                 ),
                               ],
                             ),
-                            if (transcript.isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              Text(
-                                transcript,
-                                textDirection: TextDirection.rtl,
-                                textAlign: TextAlign.right,
-                                style: const TextStyle(fontSize: 19, height: 1.6),
-                              ),
+                            if (liveComparison != null && finalComparison == null) ...[
+                              const SizedBox(height: 14),
+                              _CurrentWordCoach(expectedText: expectedText, comparison: liveComparison!),
                             ],
+                            if (transcript.isNotEmpty)
+                              ExpansionTile(
+                                tilePadding: EdgeInsets.zero,
+                                title: const Text('Recognition details'),
+                                children: [
+                                  Text(transcript, textDirection: TextDirection.rtl, textAlign: TextAlign.right),
+                                ],
+                              ),
                           ],
                         ),
                       ),
@@ -482,6 +485,52 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
   }
 }
 
+class _CurrentWordCoach extends StatelessWidget {
+  final String expectedText;
+  final RecitationComparison comparison;
+  const _CurrentWordCoach({required this.expectedText, required this.comparison});
+
+  @override
+  Widget build(BuildContext context) {
+    final words = QuranTextNormalizer.words(expectedText);
+    final cursor = comparison.nextExpectedIndex.clamp(0, words.length);
+    final remaining = (words.length - cursor).clamp(0, words.length);
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.secondary.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.secondary.withValues(alpha: .5)),
+      ),
+      child: Column(children: [
+        Text(cursor < words.length ? 'Say this word to continue' : 'Passage completed',
+          style: TextStyle(color: scheme.secondary, fontWeight: FontWeight.w900)),
+        if (cursor < words.length)
+          Text(words[cursor], textDirection: TextDirection.rtl,
+            style: TextStyle(fontFamily: 'Noto Naskh Arabic', fontFamilyFallback: const ['serif'],
+              fontSize: 34, height: 1.4, color: scheme.primary, fontWeight: FontWeight.w800)),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+          _LiveMetric(label: 'Correct', value: comparison.correctWords),
+          _LiveMetric(label: 'Missed', value: comparison.missingWords),
+          _LiveMetric(label: 'Remaining', value: remaining),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _LiveMetric extends StatelessWidget {
+  final String label;
+  final int value;
+  const _LiveMetric({required this.label, required this.value});
+  @override
+  Widget build(BuildContext context) => Column(children: [
+    Text('$value', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+    Text(label, style: Theme.of(context).textTheme.bodySmall),
+  ]);
+}
+
 class _LiveReveal extends StatelessWidget {
   final String expectedText;
   final RecitationComparison? comparison;
@@ -518,11 +567,12 @@ class _LiveReveal extends StatelessWidget {
             final expected = expectedWords[index];
             final word = assessmentByIndex[index];
             final isCorrect = word?.state == WordAssessmentState.correct;
+            final isCurrent = comparison != null && index == comparison!.nextExpectedIndex && !finalized;
             final showError =
                 word?.state == WordAssessmentState.missing ||
                 (finalized &&
                     word?.state == WordAssessmentState.substituted);
-            final revealText = isCorrect || showError;
+            final revealText = isCorrect || showError || isCurrent;
 
             if (!revealText) {
               final width = (expected.length * 13.0 + 28).clamp(54.0, 150.0);
@@ -539,10 +589,14 @@ class _LiveReveal extends StatelessWidget {
 
             final background = isCorrect
                 ? scheme.primaryContainer
-                : scheme.errorContainer;
+                : showError
+                    ? scheme.errorContainer
+                    : scheme.secondary.withValues(alpha: .12);
             final foreground = isCorrect
                 ? scheme.onPrimaryContainer
-                : scheme.onErrorContainer;
+                : showError
+                    ? scheme.onErrorContainer
+                    : scheme.secondary;
 
             return AnimatedContainer(
               duration: const Duration(milliseconds: 140),
