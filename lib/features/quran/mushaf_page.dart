@@ -9,7 +9,9 @@ import '../../core/audio/audio_service.dart';
 import '../../data/models/ayah.dart';
 import '../../data/models/surah.dart';
 import '../../data/repositories/quran_repository.dart';
+import '../../data/repositories/tajweed_repository.dart';
 import '../shell/app_controller.dart';
+import 'tajweed_text.dart';
 
 class MushafPage extends StatefulWidget {
   final int initialPage;
@@ -37,6 +39,7 @@ class _MushafPageState extends State<MushafPage> {
   bool downloading = false;
   int repeat = 1;
   double speed = 1.0;
+  bool tajweedEnabled = true;
 
   @override
   void initState() {
@@ -57,7 +60,8 @@ class _MushafPageState extends State<MushafPage> {
       final surah = await quran.surah(id);
       if (surah != null) surahs[id] = surah;
     }
-    return _MushafData(ayahs, surahs);
+    final tajweed = await TajweedRepository().forAyahs(ayahs);
+    return _MushafData(ayahs, surahs, tajweed);
   }
 
   Future<void> _onActiveAyah(int? id) async {
@@ -178,6 +182,62 @@ class _MushafPageState extends State<MushafPage> {
     }
   }
 
+  void _showTajweedLegend() {
+    const rules = [
+      ('Silent / joining letters', 'ham_wasl'),
+      ('Natural madd', 'madda_normal'),
+      ('Extended madd', 'madda_necessary'),
+      ('Qalqalah', 'qalaqah'),
+      ('Ikhfa', 'ikhafa'),
+      ('Iqlab', 'iqlab'),
+      ('Ghunnah', 'ghunnah'),
+      ('Idgham', 'idgham_ghunnah'),
+    ];
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Tajweed colour guide',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final item in rules)
+                    Chip(
+                      avatar: CircleAvatar(
+                        backgroundColor: tajweedRuleColor(
+                          item.$2,
+                          Theme.of(context).brightness,
+                        ),
+                      ),
+                      label: Text(item.$1),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'QPC Hafs Tajweed text · Quranic Universal Library (QUL)',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     audioSubscription?.cancel();
@@ -195,6 +255,19 @@ class _MushafPageState extends State<MushafPage> {
         title: Text('Mushaf · Page $page'),
         centerTitle: true,
         actions: [
+          IconButton(
+            tooltip: tajweedEnabled ? 'Turn Tajweed colours off' : 'Turn Tajweed colours on',
+            onPressed: () => setState(() => tajweedEnabled = !tajweedEnabled),
+            icon: Icon(
+              Icons.palette_outlined,
+              color: tajweedEnabled ? scheme.primary : null,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Tajweed colour guide',
+            onPressed: _showTajweedLegend,
+            icon: const Icon(Icons.info_outline),
+          ),
           IconButton(
             tooltip: 'Previous page',
             onPressed: page > 1 ? () => _go(page - 1) : null,
@@ -347,6 +420,8 @@ class _MushafPageState extends State<MushafPage> {
         _AyahBlock(
           ayahs: List<Ayah>.from(buffer),
           activeAyahId: activeAyahId,
+          tajweedText: data.tajweedText,
+          tajweedEnabled: tajweedEnabled,
         ),
       );
       buffer.clear();
@@ -502,8 +577,9 @@ class _AudioControls extends StatelessWidget {
 class _MushafData {
   final List<Ayah> ayahs;
   final Map<int, Surah> surahs;
+  final Map<int, String> tajweedText;
 
-  const _MushafData(this.ayahs, this.surahs);
+  const _MushafData(this.ayahs, this.surahs, this.tajweedText);
 }
 
 class _PageOrnament extends StatelessWidget {
@@ -597,8 +673,15 @@ class _Bismillah extends StatelessWidget {
 class _AyahBlock extends StatelessWidget {
   final List<Ayah> ayahs;
   final int? activeAyahId;
+  final Map<int, String> tajweedText;
+  final bool tajweedEnabled;
 
-  const _AyahBlock({required this.ayahs, required this.activeAyahId});
+  const _AyahBlock({
+    required this.ayahs,
+    required this.activeAyahId,
+    required this.tajweedText,
+    required this.tajweedEnabled,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -610,7 +693,6 @@ class _AyahBlock extends StatelessWidget {
           children: [
             for (final ayah in ayahs) ...[
               TextSpan(
-                text: ayah.textUthmani,
                 style: TextStyle(
                   backgroundColor: activeAyahId == ayah.id
                       ? scheme.primaryContainer
@@ -619,6 +701,21 @@ class _AyahBlock extends StatelessWidget {
                       ? FontWeight.w700
                       : FontWeight.normal,
                 ),
+                children: tajweedEnabled && tajweedText[ayah.id] != null
+                    ? [
+                        for (final segment
+                            in parseTajweedText(tajweedText[ayah.id]!))
+                          TextSpan(
+                            text: segment.text,
+                            style: TextStyle(
+                              color: tajweedRuleColor(
+                                segment.rule,
+                                Theme.of(context).brightness,
+                              ),
+                            ),
+                          ),
+                      ]
+                    : [TextSpan(text: ayah.textUthmani)],
               ),
               TextSpan(
                 text: '  ﴿${_arabicDigits(ayah.ayahNumber)}﴾  ',
