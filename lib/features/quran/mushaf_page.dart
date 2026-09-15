@@ -233,9 +233,17 @@ class _MushafPageState extends State<MushafPage> {
                     child: Container(
                     margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFF1A211D)
-                          : const Color(0xFFFFFDF5),
+                      gradient: Theme.of(context).brightness == Brightness.dark
+                          ? const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Color(0xFF1D251F), Color(0xFF151C18)],
+                            )
+                          : const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Color(0xFFFFFEF8), Color(0xFFF8F0DA)],
+                            ),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: scheme.secondary.withValues(alpha: .35)),
                       boxShadow: [
@@ -551,8 +559,8 @@ class _SurahHeader extends StatelessWidget {
             surah.nameAr,
             textDirection: TextDirection.rtl,
             style: const TextStyle(
-              fontFamily: 'Noto Naskh Arabic',
-              fontFamilyFallback: ['Noto Sans Arabic', 'serif'],
+              fontFamily: 'AmiriQuran',
+              fontFamilyFallback: ['serif'],
               fontSize: 24,
               fontWeight: FontWeight.w700,
             ),
@@ -575,8 +583,8 @@ class _Bismillah extends StatelessWidget {
         textDirection: TextDirection.rtl,
         textAlign: TextAlign.center,
         style: TextStyle(
-          fontFamily: 'Noto Naskh Arabic',
-          fontFamilyFallback: ['Noto Sans Arabic', 'serif'],
+          fontFamily: 'AmiriQuran',
+          fontFamilyFallback: ['serif'],
           fontSize: 25,
           height: 1.8,
           fontWeight: FontWeight.w600,
@@ -629,8 +637,8 @@ class _AyahBlock extends StatelessWidget {
         textDirection: TextDirection.rtl,
         textAlign: TextAlign.justify,
         style: const TextStyle(
-          fontFamily: 'Noto Naskh Arabic',
-          fontFamilyFallback: ['Noto Sans Arabic', 'serif'],
+          fontFamily: 'AmiriQuran',
+          fontFamilyFallback: ['serif'],
           fontSize: 29,
           height: 2.05,
         ),
