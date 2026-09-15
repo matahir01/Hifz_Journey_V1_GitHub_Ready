@@ -57,7 +57,7 @@ class HomePage extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
           children: [
             Container(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
@@ -73,14 +73,14 @@ class HomePage extends StatelessWidget {
                 ),
               ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Align(
-                    alignment: Alignment.centerRight,
+                    alignment: Alignment.center,
                     child: Text(
                       'السلام عليكم ورحمة الله وبركاته',
                       textDirection: TextDirection.rtl,
-                      textAlign: TextAlign.right,
+                      textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             fontFamily: 'serif',
                             height: 1.7,
@@ -94,7 +94,7 @@ class HomePage extends StatelessWidget {
                     width: double.infinity,
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
+                      alignment: Alignment.center,
                       child: Text(
                         'Your journey today',
                         maxLines: 1,
@@ -110,19 +110,16 @@ class HomePage extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     'Read  ·  Memorize  ·  Revise  ·  Retain',
+                    textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Colors.white70,
+                          letterSpacing: .25,
                         ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 18),
-            Text(
-              'What should I do today?',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 16),
             _TodayCard(
               due: stats.due,
               progress: controller.todayProgressLabel,
@@ -131,30 +128,39 @@ class HomePage extends StatelessWidget {
               restCredits: controller.streakStatus.restCredits,
             ),
             const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: dueFirst
-                  ? () => _openDueRevision(context)
-                  : controller.todayTargetCompleted
-                      ? null
-                      : () => _openTodayHifz(context),
-              icon: Icon(
-                dueFirst
-                    ? Icons.repeat_rounded
-                    : controller.todayTargetCompleted
-                        ? Icons.check_circle_outline_rounded
-                        : Icons.play_arrow_rounded,
+            if (controller.todayTargetCompleted && !dueFirst)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: .08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: scheme.primary.withValues(alpha: .18)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.task_alt_rounded, color: scheme.primary),
+                    const SizedBox(width: 9),
+                    Text(
+                      'Today’s Hifz complete',
+                      style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w800),
+                    ),
+                  ],
+                ),
+              )
+            else
+              FilledButton.icon(
+                onPressed: dueFirst
+                    ? () => _openDueRevision(context)
+                    : () => _openTodayHifz(context),
+                icon: Icon(dueFirst ? Icons.repeat_rounded : Icons.play_arrow_rounded),
+                label: Text(
+                  dueFirst
+                      ? 'Revise ${stats.due} due ayah${stats.due == 1 ? '' : 's'}'
+                      : 'Start today’s Hifz',
+                ),
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
               ),
-              label: Text(
-                dueFirst
-                    ? 'Revise ${stats.due} due ayah${stats.due == 1 ? '' : 's'}'
-                    : controller.todayTargetCompleted
-                        ? 'Today’s Hifz complete'
-                        : 'Start today’s Hifz',
-              ),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(54),
-              ),
-            ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () => Navigator.push(
@@ -190,7 +196,7 @@ class HomePage extends StatelessWidget {
               physics: const NeverScrollableScrollPhysics(),
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              childAspectRatio: 1.38,
+              childAspectRatio: 1.52,
               children: [
                 _ActionCard(
                   icon: Icons.menu_book_rounded,
@@ -275,7 +281,7 @@ class _TodayCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(17),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -368,7 +374,15 @@ class _ActionCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon),
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: .09),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: Theme.of(context).colorScheme.primary),
+                ),
                 const Spacer(),
                 Text(
                   title,
