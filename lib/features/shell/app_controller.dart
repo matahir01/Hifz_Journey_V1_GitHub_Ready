@@ -5,6 +5,7 @@ import '../../core/notifications/notification_service.dart';
 import '../../core/settings/settings_service.dart';
 import '../../data/models/ayah.dart';
 import '../../data/repositories/hifz_repository.dart';
+import '../../data/repositories/hifz_repository_metrics.dart';
 import '../../data/repositories/quran_repository.dart';
 
 class AppController extends ChangeNotifier {
@@ -108,7 +109,7 @@ class AppController extends ChangeNotifier {
     stats = await hifz.stats();
     lastRead = await quran.lastRead();
     todayCompletedAyahs = await hifz.introducedTodayCount();
-    todayCompletedPages = await hifz.introducedTodayPages();
+    todayCompletedPages = await hifz.completedPagesToday();
     streakStatus = await hifz.streakStatus();
     notifyListeners();
   }
