@@ -2,24 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/repositories/hifz_repository.dart';
+import '../../data/repositories/hifz_repository_metrics.dart';
 
 class WeakAyahsPage extends StatelessWidget {
   const WeakAyahsPage({super.key});
-
-  Future<List<WeakAyah>> _loadItems(BuildContext context) async {
-    final candidates = await context.read<HifzRepository>().weakAyahs(limit: 10000);
-    return candidates.where((item) {
-      return item.failedRecalls >= 2 ||
-          (item.failedRecalls >= 1 && item.strength < 50);
-    }).toList();
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Needs attention')),
       body: FutureBuilder<List<WeakAyah>>(
-        future: _loadItems(context),
+        future: context.read<HifzRepository>().genuineWeakAyahs(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -54,7 +47,9 @@ class WeakAyahsPage extends StatelessWidget {
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                           const Spacer(),
-                          Chip(label: Text('${item.strength.toStringAsFixed(0)}%')),
+                          Chip(
+                            label: Text('${item.strength.toStringAsFixed(0)}%'),
+                          ),
                         ],
                       ),
                       Text(
