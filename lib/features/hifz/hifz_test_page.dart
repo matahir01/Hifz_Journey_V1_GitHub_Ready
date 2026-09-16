@@ -18,10 +18,8 @@ class HifzTestPage extends StatefulWidget {
 
 class _HifzTestPageState extends State<HifzTestPage> {
   late Future<List<Ayah>> items;
-  final DeviceArabicRecitationRecognizer recognizer =
-      DeviceArabicRecitationRecognizer();
-  final QuranTextRecitationAssessor assessor =
-      const QuranTextRecitationAssessor();
+  final DeviceArabicRecitationRecognizer recognizer = DeviceArabicRecitationRecognizer();
+  final QuranTextRecitationAssessor assessor = const QuranTextRecitationAssessor();
   StreamSubscription<RecitationRecognitionState>? subscription;
 
   RecitationRecognitionState speech = RecitationRecognitionState.initial();
@@ -29,7 +27,6 @@ class _HifzTestPageState extends State<HifzTestPage> {
   int index = 0;
   int completed = 0;
   double totalScore = 0;
-  bool revealed = false;
   bool saving = false;
 
   @override
@@ -42,13 +39,6 @@ class _HifzTestPageState extends State<HifzTestPage> {
     recognizer.initialize().then((_) {
       if (mounted) setState(() => speech = recognizer.state);
     });
-  }
-
-  @override
-  void dispose() {
-    subscription?.cancel();
-    recognizer.dispose();
-    super.dispose();
   }
 
   Future<List<Ayah>> _load() async {
@@ -64,10 +54,7 @@ class _HifzTestPageState extends State<HifzTestPage> {
   }
 
   Future<void> _listen() async {
-    setState(() {
-      assessment = null;
-      revealed = false;
-    });
+    setState(() => assessment = null);
     await recognizer.start(preferOnDevice: false);
   }
 
@@ -78,8 +65,7 @@ class _HifzTestPageState extends State<HifzTestPage> {
       expectedText: ayah.textUthmani,
       transcript: recognizer.state.transcript,
     );
-    if (!mounted) return;
-    setState(() => assessment = result);
+    if (mounted) setState(() => assessment = result);
   }
 
   RecallGrade _gradeFor(double score) {
@@ -92,30 +78,29 @@ class _HifzTestPageState extends State<HifzTestPage> {
     final result = assessment;
     if (result == null || saving) return;
     setState(() => saving = true);
-    final grade = _gradeFor(result.recallScore);
     await context.read<HifzRepository>().recordRecitationAssessment(
-          ayahId: ayah.id,
-          grade: grade,
-          score: result.recallScore,
-          transcript: result.normalizedTranscript,
-          issues: result.issues.join('; '),
-        );
+      ayahId: ayah.id,
+      grade: _gradeFor(result.recallScore),
+      score: result.recallScore,
+      transcript: result.normalizedTranscript,
+      issues: result.issues.join('; '),
+    );
     totalScore += result.recallScore;
     completed++;
     if (!mounted) return;
     setState(() {
       saving = false;
       assessment = null;
-      revealed = false;
-      speech = RecitationRecognitionState.initial().copyWith(
-        available: recognizer.state.available,
-      );
-      if (index + 1 < total) {
-        index++;
-      } else {
-        index = total;
-      }
+      speech = RecitationRecognitionState.initial().copyWith(available: recognizer.state.available);
+      index = index + 1 < total ? index + 1 : total;
     });
+  }
+
+  @override
+  void dispose() {
+    subscription?.cancel();
+    recognizer.dispose();
+    super.dispose();
   }
 
   @override
@@ -125,11 +110,9 @@ class _HifzTestPageState extends State<HifzTestPage> {
       body: FutureBuilder<List<Ayah>>(
         future: items,
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
           final ayahs = snapshot.data!;
-          if (ayahs.isEmpty) return const _EmptyTest();
+          if (ayahs.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(30), child: Text('No memorized ayahs are ready for testing yet.', textAlign: TextAlign.center)));
           if (index >= ayahs.length) {
             final average = completed == 0 ? 0.0 : totalScore / completed;
             return _FinishedTest(score: average, total: completed);
@@ -154,30 +137,15 @@ class _HifzTestPageState extends State<HifzTestPage> {
             padding: const EdgeInsets.all(22),
             child: Column(
               children: [
-                Text(
-                  'Recite from memory',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 16),
-                if (!revealed)
-                  const Icon(Icons.visibility_off_outlined, size: 58)
-                else
-                  Text(
-                    ayah.textUthmani,
-                    textDirection: TextDirection.rtl,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(fontSize: 29, height: 1.9),
-                  ),
+                Text('Recite from memory', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 14),
-                TextButton.icon(
-                  onPressed: () => setState(() => revealed = !revealed),
-                  icon: Icon(
-                    revealed
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                  ),
-                  label: Text(revealed ? 'Hide ayah' : 'Reveal ayah'),
-                ),
+                const Icon(Icons.visibility_off_outlined, size: 54),
+                const SizedBox(height: 12),
+                const Text('No text, first-word hint, or reveal is available before you submit. This test is intended to measure independent recall.', textAlign: TextAlign.center),
+                if (result != null) ...[
+                  const Divider(height: 30),
+                  Text(ayah.textUthmani, textDirection: TextDirection.rtl, textAlign: TextAlign.right, style: const TextStyle(fontSize: 28, height: 1.9)),
+                ],
               ],
             ),
           ),
@@ -189,64 +157,25 @@ class _HifzTestPageState extends State<HifzTestPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    Icon(speech.listening ? Icons.mic : Icons.mic_none),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        speech.listening ? 'Listening…' : 'Ready',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ],
-                ),
-                if (!speech.available) ...[
-                  const SizedBox(height: 8),
-                  const Text('Speech recognition is unavailable.'),
-                ],
-                if (speech.error != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    speech.error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ],
+                Row(children: [
+                  Icon(speech.listening ? Icons.mic : Icons.mic_none),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(speech.listening ? 'Listening…' : 'Ready', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
+                ]),
+                if (!speech.available) ...[const SizedBox(height: 8), const Text('Speech recognition is unavailable.')],
+                if (speech.error != null) ...[const SizedBox(height: 8), Text(speech.error!, style: TextStyle(color: Theme.of(context).colorScheme.error))],
                 if (speech.transcript.isNotEmpty) ...[
                   const SizedBox(height: 14),
-                  Text(
-                    speech.transcript,
-                    textDirection: TextDirection.rtl,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(fontSize: 23, height: 1.7),
-                  ),
+                  Text(speech.transcript, textDirection: TextDirection.rtl, textAlign: TextAlign.right, style: const TextStyle(fontSize: 23, height: 1.7)),
                 ],
                 const SizedBox(height: 14),
                 if (speech.listening)
-                  FilledButton.icon(
-                    onPressed: () => _stopAndAssess(ayah),
-                    icon: const Icon(Icons.stop_circle_outlined),
-                    label: const Text('Stop & check'),
-                  )
+                  FilledButton.icon(onPressed: () => _stopAndAssess(ayah), icon: const Icon(Icons.stop_circle_outlined), label: const Text('Stop & check'))
                 else
                   FilledButton.icon(
-                    onPressed: speech.available
-                        ? _listen
-                        : () async {
-                            await recognizer.initialize();
-                            if (mounted) {
-                              setState(() => speech = recognizer.state);
-                            }
-                          },
+                    onPressed: speech.available ? _listen : () async { await recognizer.initialize(); if (mounted) setState(() => speech = recognizer.state); },
                     icon: const Icon(Icons.mic),
-                    label: Text(
-                      speech.available ? 'Start listening' : 'Enable microphone',
-                    ),
+                    label: Text(speech.available ? 'Start listening' : 'Enable microphone'),
                   ),
               ],
             ),
@@ -256,17 +185,9 @@ class _HifzTestPageState extends State<HifzTestPage> {
           const SizedBox(height: 14),
           _AssessmentCard(result: result),
           const SizedBox(height: 14),
-          FilledButton.icon(
-            onPressed: saving ? null : () => _accept(ayah, total),
-            icon: const Icon(Icons.arrow_forward),
-            label: Text(saving ? 'Saving…' : 'Continue'),
-          ),
+          FilledButton.icon(onPressed: saving ? null : () => _accept(ayah, total), icon: const Icon(Icons.arrow_forward), label: Text(saving ? 'Saving…' : 'Continue')),
           const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: saving ? null : _listen,
-            icon: const Icon(Icons.replay),
-            label: const Text('Recite again'),
-          ),
+          OutlinedButton.icon(onPressed: saving ? null : _listen, icon: const Icon(Icons.replay), label: const Text('Recite again')),
         ],
       ],
     );
@@ -275,42 +196,23 @@ class _HifzTestPageState extends State<HifzTestPage> {
 
 class _AssessmentCard extends StatelessWidget {
   final RecitationAssessment result;
-
   const _AssessmentCard({required this.result});
 
   @override
   Widget build(BuildContext context) {
     final percent = (result.recallScore * 100).round();
-    final grade = percent >= 86
-        ? 'Strong'
-        : percent >= 55
-            ? 'Partial'
-            : 'Needs revision';
+    final grade = percent >= 86 ? 'Strong' : percent >= 55 ? 'Partial' : 'Needs revision';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Text(
-                  '$percent%',
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineMedium
-                      ?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  grade,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
+            Row(children: [
+              Text('$percent%', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(width: 12),
+              Text(grade, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+            ]),
             const SizedBox(height: 12),
             Wrap(
               textDirection: TextDirection.rtl,
@@ -323,18 +225,7 @@ class _AssessmentCard extends StatelessWidget {
                   RecitationTokenStatus.substituted => scheme.tertiaryContainer,
                   RecitationTokenStatus.missed => scheme.errorContainer,
                 };
-                return Chip(
-                  backgroundColor: background,
-                  label: Text(
-                    token.expected,
-                    textDirection: TextDirection.rtl,
-                  ),
-                  tooltip: token.spoken == null
-                      ? 'Missed'
-                      : token.status == RecitationTokenStatus.substituted
-                          ? 'Heard: ${token.spoken}'
-                          : 'Correct',
-                );
+                return Chip(backgroundColor: background, label: Text(token.expected, textDirection: TextDirection.rtl));
               }).toList(),
             ),
             const SizedBox(height: 10),
@@ -346,27 +237,9 @@ class _AssessmentCard extends StatelessWidget {
   }
 }
 
-class _EmptyTest extends StatelessWidget {
-  const _EmptyTest();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(30),
-        child: Text(
-          'No memorized ayahs are ready for testing yet.',
-          textAlign: TextAlign.center,
-        ),
-      ),
-    );
-  }
-}
-
 class _FinishedTest extends StatelessWidget {
   final double score;
   final int total;
-
   const _FinishedTest({required this.score, required this.total});
 
   @override
@@ -378,28 +251,14 @@ class _FinishedTest extends StatelessWidget {
         child: Card(
           child: Padding(
             padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.record_voice_over_outlined, size: 52),
-                const SizedBox(height: 12),
-                Text(
-                  '$percent%',
-                  style: Theme.of(context)
-                      .textTheme
-                      .displaySmall
-                      ?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                Text(
-                  'Average across $total recitation${total == 1 ? '' : 's'}',
-                ),
-                const SizedBox(height: 18),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Done'),
-                ),
-              ],
-            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.record_voice_over_outlined, size: 52),
+              const SizedBox(height: 12),
+              Text('$percent%', style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800)),
+              Text('Average across $total recitation${total == 1 ? '' : 's'}'),
+              const SizedBox(height: 18),
+              FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
+            ]),
           ),
         ),
       ),
