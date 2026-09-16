@@ -26,6 +26,9 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Prepare verified offline Tajweed asset
+        run: python3 tool/prepare_tajweed.py --force
+
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
