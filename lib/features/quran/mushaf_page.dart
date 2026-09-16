@@ -28,6 +28,7 @@ class _MushafPageState extends State<MushafPage> {
   late Future<_MushafData> data;
   late final QuranAudioService audio;
   StreamSubscription<int?>? audioSubscription;
+  StreamSubscription<bool>? playingSubscription;
 
   int? selectedAyahId;
   int? activeAyahId;
@@ -44,8 +45,20 @@ class _MushafPageState extends State<MushafPage> {
     page = widget.initialPage.clamp(1, 604).toInt();
     selectedAyahId = widget.initialAyahId;
     data = _loadForPage(page);
-    audio = QuranAudioService();
+    audio = context.read<QuranAudioService>();
+    activeAyahId = audio.activeAyahId;
+    playing = audio.isPlaying;
     audioSubscription = audio.activeAyahIdStream.listen(_onActiveAyah);
+    playingSubscription = audio.playingStream.listen((value) {
+      if (mounted) setState(() => playing = value);
+    });
+
+    final active = audio.activeAyahId;
+    if (active != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _onActiveAyah(active);
+      });
+    }
   }
 
   Future<_MushafData> _loadForPage(int value) async {
@@ -56,29 +69,41 @@ class _MushafPageState extends State<MushafPage> {
       final surah = await quran.surah(id);
       if (surah != null) surahs[id] = surah;
     }
-    final base = _MushafData(ayahs, surahs, const {});
-    unawaited(TajweedRepository().forAyahs(ayahs).then((tajweed) {
-      if (!mounted || page != value) return;
-      setState(() => data = Future.value(_MushafData(ayahs, surahs, tajweed)));
-    }).catchError((Object _) {}));
-    return base;
+
+    Map<int, String> tajweed = const {};
+    try {
+      tajweed = await TajweedRepository().forAyahs(ayahs);
+    } catch (_) {
+      // The offline Uthmani text remains readable if the Tajweed layer fails.
+    }
+    return _MushafData(ayahs, surahs, tajweed);
   }
 
   Future<void> _onActiveAyah(int? id) async {
     if (!mounted) return;
     setState(() => activeAyahId = id);
     if (id == null) return;
+
     final ayah = await context.read<QuranRepository>().ayah(id);
     if (ayah == null || !mounted) return;
+
     selectedAyahId = ayah.id;
     await context.read<QuranRepository>().saveReadingProgress(ayah);
-    if (ayah.page != page && mounted) await _go(ayah.page);
+
+    if (ayah.page != page && mounted) {
+      final next = ayah.page.clamp(1, 604).toInt();
+      setState(() {
+        page = next;
+        selectedAyahId = ayah.id;
+        data = _loadForPage(next);
+      });
+    }
   }
 
   Future<void> _go(int value) async {
     final next = value.clamp(1, 604).toInt();
     if (next == page) return;
-    if (playing) await audio.stop();
+    if (audio.isPlaying) await audio.stop();
     final quran = context.read<QuranRepository>();
     final first = await quran.firstAyahOfPage(next);
     if (!mounted) return;
@@ -103,16 +128,17 @@ class _MushafPageState extends State<MushafPage> {
   }
 
   Future<void> _togglePlayback(_MushafData value) async {
-    if (playing) {
+    if (audio.isPlaying) {
       await audio.stop();
-      if (mounted) setState(() => playing = false);
       return;
     }
     if (value.ayahs.isEmpty) return;
+
     final start = _startAyah(value);
     final all = await context.read<QuranRepository>().ayahsForSurah(start.surahId);
     final startIndex = all.indexWhere((e) => e.id == start.id);
     if (startIndex < 0 || !mounted) return;
+
     final controller = context.read<AppController>();
     final library = context.read<AudioLibraryService>();
     setState(() => playing = true);
@@ -127,12 +153,16 @@ class _MushafPageState extends State<MushafPage> {
       );
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Playback unavailable. Download audio for offline use or check your connection.'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Playback unavailable. Download audio for offline use or check your connection.',
+            ),
+          ),
+        );
       }
     } finally {
-      if (mounted) setState(() => playing = false);
+      if (mounted) setState(() => playing = audio.isPlaying);
     }
   }
 
@@ -155,9 +185,11 @@ class _MushafPageState extends State<MushafPage> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Audio download failed. Please try again when connected.'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Audio download failed. Please try again when connected.'),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => downloading = false);
@@ -186,7 +218,12 @@ class _MushafPageState extends State<MushafPage> {
             children: [
               for (final item in rules)
                 Chip(
-                  avatar: CircleAvatar(backgroundColor: tajweedRuleColor(item.$2, Theme.of(context).brightness)),
+                  avatar: CircleAvatar(
+                    backgroundColor: tajweedRuleColor(
+                      item.$2,
+                      Theme.of(context).brightness,
+                    ),
+                  ),
                   label: Text(item.$1),
                 ),
             ],
@@ -199,7 +236,7 @@ class _MushafPageState extends State<MushafPage> {
   @override
   void dispose() {
     audioSubscription?.cancel();
-    audio.dispose();
+    playingSubscription?.cancel();
     super.dispose();
   }
 
@@ -215,11 +252,22 @@ class _MushafPageState extends State<MushafPage> {
               backgroundColor: const Color(0xFFF5EEDC),
               actions: [
                 IconButton(
-                  tooltip: tajweedEnabled ? 'Turn Tajweed colours off' : 'Turn Tajweed colours on',
+                  tooltip: tajweedEnabled
+                      ? 'Turn Tajweed colours off'
+                      : 'Turn Tajweed colours on',
                   onPressed: () => setState(() => tajweedEnabled = !tajweedEnabled),
-                  icon: Icon(Icons.palette_outlined, color: tajweedEnabled ? Theme.of(context).colorScheme.primary : null),
+                  icon: Icon(
+                    Icons.palette_outlined,
+                    color: tajweedEnabled
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
                 ),
-                IconButton(tooltip: 'Tajweed colour guide', onPressed: _showTajweedLegend, icon: const Icon(Icons.info_outline)),
+                IconButton(
+                  tooltip: 'Tajweed colour guide',
+                  onPressed: _showTajweedLegend,
+                  icon: const Icon(Icons.info_outline),
+                ),
                 IconButton(
                   tooltip: 'Distraction-free reading',
                   onPressed: () => setState(() => controlsVisible = false),
@@ -240,9 +288,13 @@ class _MushafPageState extends State<MushafPage> {
               ),
             );
           }
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
           final value = snapshot.data!;
-          if (value.ayahs.isEmpty) return const Center(child: Text('No Qur’an text found for this page.'));
+          if (value.ayahs.isEmpty) {
+            return const Center(child: Text('No Qur’an text found for this page.'));
+          }
           return GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => setState(() => controlsVisible = !controlsVisible),
@@ -256,7 +308,12 @@ class _MushafPageState extends State<MushafPage> {
                 children: [
                   Positioned.fill(
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(8, 6, 8, controlsVisible ? 92 : 6),
+                      padding: EdgeInsets.fromLTRB(
+                        8,
+                        6,
+                        8,
+                        controlsVisible ? 92 : 6,
+                      ),
                       child: _FittedMushafSheet(
                         page: page,
                         data: value,
@@ -283,7 +340,8 @@ class _MushafPageState extends State<MushafPage> {
                         onDownload: () => _downloadCurrentSurah(value),
                         onRepeat: (v) => setState(() => repeat = v),
                         onSpeed: (v) => setState(() => speed = v),
-                        onReciter: (id) => context.read<AppController>().setReciter(id),
+                        onReciter: (id) =>
+                            context.read<AppController>().setReciter(id),
                       ),
                     ),
                 ],
@@ -316,7 +374,13 @@ class _FittedMushafSheet extends StatelessWidget {
         color: const Color(0xFFFFF9E9),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFC8B98F)),
-        boxShadow: const [BoxShadow(blurRadius: 12, offset: Offset(0, 4), color: Color(0x22000000))],
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 12,
+            offset: Offset(0, 4),
+            color: Color(0x22000000),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
@@ -341,7 +405,14 @@ class _FittedMushafSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 3),
-            Text('$page', style: const TextStyle(fontSize: 12, color: Color(0xFF6B5B3E), fontWeight: FontWeight.w600)),
+            Text(
+              '$page',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFF6B5B3E),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),
@@ -358,38 +429,71 @@ class _FittedMushafSheet extends StatelessWidget {
         if (ayah.ayahNumber == 1) {
           final surah = data.surahs[ayah.surahId];
           if (surah != null) {
-            spans.add(TextSpan(
-              text: '\n﴿ ${surah.nameAr} ﴾\n',
-              style: const TextStyle(fontFamily: 'AmiriQuran', fontSize: 22, height: 1.5, fontWeight: FontWeight.w700, color: Color(0xFF4C3E26)),
-            ));
+            spans.add(
+              TextSpan(
+                text: '\n﴿ ${surah.nameAr} ﴾\n',
+                style: const TextStyle(
+                  fontFamily: 'AmiriQuran',
+                  fontSize: 22,
+                  height: 1.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF4C3E26),
+                ),
+              ),
+            );
             if (surah.id != 1 && surah.id != 9) {
-              spans.add(const TextSpan(
-                text: 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n',
-                style: TextStyle(fontFamily: 'AmiriQuran', fontSize: 21, height: 1.6, color: Color(0xFF3F5037)),
-              ));
+              spans.add(
+                const TextSpan(
+                  text: 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n',
+                  style: TextStyle(
+                    fontFamily: 'AmiriQuran',
+                    fontSize: 21,
+                    height: 1.6,
+                    color: Color(0xFF3F5037),
+                  ),
+                ),
+              );
             }
           }
         }
       }
+
       final active = ayah.id == activeAyahId;
       final baseStyle = TextStyle(
         fontFamily: 'AmiriQuran',
         fontSize: 24,
         height: 1.82,
-        color: active ? const Color(0xFF7A3E22) : const Color(0xFF1D1A16),
-        backgroundColor: active ? const Color(0x22B88A44) : null,
+        fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+        color: active ? const Color(0xFF0E5A46) : const Color(0xFF1D1A16),
+        backgroundColor: active ? const Color(0x38D6B86A) : null,
       );
       final tajweed = data.tajweedText[ayah.id];
       if (tajweedEnabled && tajweed != null && tajweed.isNotEmpty) {
         for (final segment in parseTajweedText(tajweed)) {
-          spans.add(TextSpan(
-            text: segment.text,
-            style: baseStyle.copyWith(color: segment.rule == null ? baseStyle.color : tajweedRuleColor(segment.rule, brightness)),
-          ));
+          spans.add(
+            TextSpan(
+              text: segment.text,
+              style: baseStyle.copyWith(
+                color: segment.rule == null
+                    ? baseStyle.color
+                    : tajweedRuleColor(segment.rule, brightness),
+              ),
+            ),
+          );
         }
-        spans.add(TextSpan(text: ' ﴿${_arabicDigits(ayah.ayahNumber)}﴾ ', style: baseStyle));
+        spans.add(
+          TextSpan(
+            text: ' ﴿${_arabicDigits(ayah.ayahNumber)}﴾ ',
+            style: baseStyle,
+          ),
+        );
       } else {
-        spans.add(TextSpan(text: '${ayah.textUthmani} ﴿${_arabicDigits(ayah.ayahNumber)}﴾ ', style: baseStyle));
+        spans.add(
+          TextSpan(
+            text: '${ayah.textUthmani} ﴿${_arabicDigits(ayah.ayahNumber)}﴾ ',
+            style: baseStyle,
+          ),
+        );
       }
     }
     return spans;
@@ -397,7 +501,11 @@ class _FittedMushafSheet extends StatelessWidget {
 
   String _arabicDigits(int value) {
     const digits = '٠١٢٣٤٥٦٧٨٩';
-    return value.toString().split('').map((e) => digits[int.parse(e)]).join();
+    return value
+        .toString()
+        .split('')
+        .map((e) => digits[int.parse(e)])
+        .join();
   }
 }
 
@@ -411,9 +519,21 @@ class _PageHeader extends StatelessWidget {
     final surah = data.surahs[first.surahId];
     return Row(
       children: [
-        Text('Juz ${first.juz}', style: const TextStyle(fontSize: 11, color: Color(0xFF6B5B3E))),
+        Text(
+          'Juz ${first.juz}',
+          style: const TextStyle(fontSize: 11, color: Color(0xFF6B5B3E)),
+        ),
         const Spacer(),
-        Text(surah?.nameAr ?? '', textDirection: TextDirection.rtl, style: const TextStyle(fontFamily: 'AmiriQuran', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF51442E))),
+        Text(
+          surah?.nameAr ?? '',
+          textDirection: TextDirection.rtl,
+          style: const TextStyle(
+            fontFamily: 'AmiriQuran',
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF51442E),
+          ),
+        ),
       ],
     );
   }
@@ -460,39 +580,76 @@ class _CompactControls extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Row(
           children: [
-            IconButton(onPressed: onPrevious, icon: const Icon(Icons.chevron_left)),
-            IconButton.filled(onPressed: onPlay, icon: Icon(playing ? Icons.stop : Icons.play_arrow)),
+            IconButton(
+              onPressed: onPrevious,
+              icon: const Icon(Icons.chevron_left),
+            ),
+            IconButton.filled(
+              onPressed: onPlay,
+              icon: Icon(playing ? Icons.stop : Icons.play_arrow),
+            ),
             IconButton(
               onPressed: downloading ? null : onDownload,
               icon: downloading
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.download_for_offline_outlined),
             ),
             const Spacer(),
-            Text('$page / 604', style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(
+              '$page / 604',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
             const Spacer(),
             PopupMenuButton<int>(
               tooltip: 'Repeat',
               icon: const Icon(Icons.repeat),
               initialValue: repeat,
               onSelected: onRepeat,
-              itemBuilder: (_) => [1, 3, 5, 10].map((v) => PopupMenuItem(value: v, child: Text('Repeat ×$v'))).toList(),
+              itemBuilder: (_) => [1, 3, 5, 10]
+                  .map(
+                    (v) => PopupMenuItem(
+                      value: v,
+                      child: Text('Repeat ×$v'),
+                    ),
+                  )
+                  .toList(),
             ),
             PopupMenuButton<double>(
               tooltip: 'Speed',
               icon: const Icon(Icons.speed),
               initialValue: speed,
               onSelected: onSpeed,
-              itemBuilder: (_) => [0.75, 1.0, 1.25].map((v) => PopupMenuItem(value: v, child: Text('${v}× speed'))).toList(),
+              itemBuilder: (_) => [0.75, 1.0, 1.25]
+                  .map(
+                    (v) => PopupMenuItem(
+                      value: v,
+                      child: Text('${v}× speed'),
+                    ),
+                  )
+                  .toList(),
             ),
             PopupMenuButton<String>(
               tooltip: 'Reciter',
               icon: const Icon(Icons.person_outline),
               initialValue: reciter.id,
               onSelected: onReciter,
-              itemBuilder: (_) => AudioReciters.all.map((r) => PopupMenuItem(value: r.id, child: Text(r.name))).toList(),
+              itemBuilder: (_) => AudioReciters.all
+                  .map(
+                    (r) => PopupMenuItem(
+                      value: r.id,
+                      child: Text(r.name),
+                    ),
+                  )
+                  .toList(),
             ),
-            IconButton(onPressed: onNext, icon: const Icon(Icons.chevron_right)),
+            IconButton(
+              onPressed: onNext,
+              icon: const Icon(Icons.chevron_right),
+            ),
           ],
         ),
       ),

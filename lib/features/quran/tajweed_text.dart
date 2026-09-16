@@ -9,13 +9,17 @@ class TajweedSegment {
 
 List<TajweedSegment> parseTajweedText(String source) {
   final result = <TajweedSegment>[];
-  final pattern = RegExp(r'<rule class=([a-z_]+)>(.*?)</rule>');
+  final pattern = RegExp(
+    r'''<rule\s+class\s*=\s*(?:['"])?([a-z_]+)(?:['"])?>(.*?)</rule>''',
+    caseSensitive: false,
+    dotAll: true,
+  );
   var offset = 0;
   for (final match in pattern.allMatches(source)) {
     if (match.start > offset) {
       result.add(TajweedSegment(source.substring(offset, match.start)));
     }
-    result.add(TajweedSegment(match.group(2)!, match.group(1)!));
+    result.add(TajweedSegment(match.group(2)!, match.group(1)!.toLowerCase()));
     offset = match.end;
   }
   if (offset < source.length) {
