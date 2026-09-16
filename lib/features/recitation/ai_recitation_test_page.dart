@@ -301,13 +301,6 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title ?? 'Recitation test'),
-        actions: [
-          IconButton(
-            tooltip: textHidden ? 'Show passage' : 'Hide passage',
-            onPressed: () => setState(() => textHidden = !textHidden),
-            icon: Icon(textHidden ? Icons.visibility_off : Icons.visibility),
-          ),
-        ],
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
@@ -316,21 +309,6 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
               : ListView(
                   padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
                   children: [
-                    if (widget.cueText != null &&
-                        widget.cueText!.trim().isNotEmpty) ...[
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            widget.cueText!,
-                            textDirection: TextDirection.rtl,
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(fontSize: 24, height: 1.7),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(18),
@@ -394,15 +372,18 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
                                 ),
                               ],
                             ),
-                            if (transcript.isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              Text(
-                                transcript,
-                                textDirection: TextDirection.rtl,
-                                textAlign: TextAlign.right,
-                                style: const TextStyle(fontSize: 19, height: 1.6),
-                              ),
+                            if (liveComparison != null && finalComparison == null) ...[
+                              const SizedBox(height: 14),
+                              _CurrentWordCoach(expectedText: expectedText, comparison: liveComparison!),
                             ],
+                            if (transcript.isNotEmpty)
+                              ExpansionTile(
+                                tilePadding: EdgeInsets.zero,
+                                title: const Text('Recognition details'),
+                                children: [
+                                  Text(transcript, textDirection: TextDirection.rtl, textAlign: TextAlign.right),
+                                ],
+                              ),
                           ],
                         ),
                       ),
@@ -482,6 +463,53 @@ class _AiRecitationTestPageState extends State<AiRecitationTestPage> {
   }
 }
 
+class _CurrentWordCoach extends StatelessWidget {
+  final String expectedText;
+  final RecitationComparison comparison;
+  const _CurrentWordCoach({required this.expectedText, required this.comparison});
+
+  @override
+  Widget build(BuildContext context) {
+    final wordCount = QuranTextNormalizer.words(expectedText).length;
+    final cursor = comparison.nextExpectedIndex.clamp(0, wordCount);
+    final remaining = (wordCount - cursor).clamp(0, wordCount);
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.secondary.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.secondary.withValues(alpha: .5)),
+      ),
+      child: Column(children: [
+        Text(cursor < wordCount ? 'Recite the next word' : 'Passage completed',
+          style: TextStyle(color: scheme.secondary, fontWeight: FontWeight.w900)),
+        if (cursor < wordCount)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Icon(Icons.visibility_off_outlined, size: 34),
+          ),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+          _LiveMetric(label: 'Correct', value: comparison.correctWords),
+          _LiveMetric(label: 'Missed', value: comparison.missingWords),
+          _LiveMetric(label: 'Remaining', value: remaining),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _LiveMetric extends StatelessWidget {
+  final String label;
+  final int value;
+  const _LiveMetric({required this.label, required this.value});
+  @override
+  Widget build(BuildContext context) => Column(children: [
+    Text('$value', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+    Text(label, style: Theme.of(context).textTheme.bodySmall),
+  ]);
+}
+
 class _LiveReveal extends StatelessWidget {
   final String expectedText;
   final RecitationComparison? comparison;
@@ -518,9 +546,10 @@ class _LiveReveal extends StatelessWidget {
             final expected = expectedWords[index];
             final word = assessmentByIndex[index];
             final isCorrect = word?.state == WordAssessmentState.correct;
-            final showError = finalized &&
-                (word?.state == WordAssessmentState.substituted ||
-                    word?.state == WordAssessmentState.missing);
+            final showError =
+                word?.state == WordAssessmentState.missing ||
+                (finalized &&
+                    word?.state == WordAssessmentState.substituted);
             final revealText = isCorrect || showError;
 
             if (!revealText) {
@@ -538,10 +567,14 @@ class _LiveReveal extends StatelessWidget {
 
             final background = isCorrect
                 ? scheme.primaryContainer
-                : scheme.errorContainer;
+                : showError
+                    ? scheme.errorContainer
+                    : scheme.secondary.withValues(alpha: .12);
             final foreground = isCorrect
                 ? scheme.onPrimaryContainer
-                : scheme.onErrorContainer;
+                : showError
+                    ? scheme.onErrorContainer
+                    : scheme.secondary;
 
             return AnimatedContainer(
               duration: const Duration(milliseconds: 140),

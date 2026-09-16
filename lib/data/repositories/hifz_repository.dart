@@ -238,9 +238,17 @@ class HifzRepository {
     final db = await database.db;
     final range = _todayRange();
     final rows = await db.rawQuery(
-      '''SELECT COUNT(DISTINCT a.page) AS c
-         FROM app_activity x JOIN ayahs a ON a.id = x.ayah_id
-         WHERE x.kind = 'new' AND x.created_at >= ? AND x.created_at < ?''',
+      '''SELECT COUNT(*) AS c FROM (
+           SELECT a.page
+           FROM app_activity x
+           JOIN ayahs a ON a.id = x.ayah_id
+           WHERE x.kind = 'new' AND x.created_at >= ? AND x.created_at < ?
+           GROUP BY a.page
+           HAVING COUNT(DISTINCT x.ayah_id) = (
+             SELECT COUNT(*) FROM ayahs page_ayahs
+             WHERE page_ayahs.page = a.page
+           )
+         ) completed_pages''',
       [range.$1, range.$2],
     );
     return Sqflite.firstIntValue(rows) ?? 0;

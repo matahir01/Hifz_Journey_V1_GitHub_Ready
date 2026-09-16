@@ -18,6 +18,7 @@ class RecitationComparison {
   final int missingWords;
   final int substitutedWords;
   final List<WordAssessment> words;
+  final int nextExpectedIndex;
 
   const RecitationComparison({
     required this.score,
@@ -25,6 +26,7 @@ class RecitationComparison {
     required this.missingWords,
     required this.substitutedWords,
     required this.words,
+    this.nextExpectedIndex = 0,
   });
 }
 
@@ -108,11 +110,15 @@ class QuranTextNormalizer {
 /// into hidden/missed words because of a later provider reset.
 class _CommittedRecitationLedger {
   final Set<int> correctIndices = <int>{};
+  final Set<int> missedIndices = <int>{};
+  int nextExpectedIndex = 0;
   bool finalized = false;
   DateTime lastSeen = DateTime.now();
 
   void reset() {
     correctIndices.clear();
+    missedIndices.clear();
+    nextExpectedIndex = 0;
     finalized = false;
     lastSeen = DateTime.now();
   }
@@ -137,6 +143,18 @@ class RecitationComparator {
     final heard = QuranTextNormalizer.collapseMuqattaat(expected, rawHeard);
     final m = expected.length;
     final n = heard.length;
+    final passageKey = expected.join(' ');
+
+    // A live Hifz test is intentionally strict: a later word must never unlock
+    // progress while an earlier expected word is still unrecognized.
+    if (live || _ledgers.containsKey(passageKey)) {
+      return _compareSequential(
+        expected: expected,
+        heard: heard,
+        key: passageKey,
+        live: live,
+      );
+    }
 
     final dp = List.generate(m + 1, (_) => List<int>.filled(n + 1, 0));
     for (var i = 0; i <= m; i++) {
@@ -309,6 +327,88 @@ class RecitationComparator {
       }
     }
     commitRun(words.length);
+  }
+
+
+  RecitationComparison _compareSequential({
+    required List<String> expected,
+    required List<String> heard,
+    required String key,
+    required bool live,
+  }) {
+    final now = DateTime.now();
+    var ledger = _ledgers.putIfAbsent(
+      key,
+      () => _CommittedRecitationLedger(),
+    );
+
+    final stale = now.difference(ledger.lastSeen) > const Duration(minutes: 30);
+    if (stale || (live && ledger.finalized)) {
+      ledger = _CommittedRecitationLedger();
+      _ledgers[key] = ledger;
+    }
+    ledger.lastSeen = now;
+
+    // Re-evaluate the cumulative provider transcript from the beginning so a
+    // corrected Android partial can still satisfy the current expected word.
+    // A word heard out of order only reveals/marks the blocked word; it is not
+    // consumed as progress.
+    ledger.correctIndices.clear();
+    var cursor = 0;
+    for (final token in heard) {
+      if (cursor >= expected.length) break;
+      if (token == expected[cursor]) {
+        ledger.correctIndices.add(cursor);
+        cursor++;
+        continue;
+      }
+
+      final appearsLater = expected
+          .skip(cursor + 1)
+          .contains(token);
+      if (appearsLater) {
+        ledger.missedIndices.add(cursor);
+      }
+    }
+    ledger.nextExpectedIndex = cursor;
+
+    final words = <WordAssessment>[];
+    var correct = 0;
+    var missing = 0;
+    for (var index = 0; index < expected.length; index++) {
+      final wasMissed = ledger.missedIndices.contains(index);
+      final wasRecognized = ledger.correctIndices.contains(index);
+      final state = wasMissed
+          ? WordAssessmentState.missing
+          : wasRecognized
+              ? WordAssessmentState.correct
+              : live
+                  ? WordAssessmentState.pending
+                  : WordAssessmentState.missing;
+      if (state == WordAssessmentState.correct) correct++;
+      if (state == WordAssessmentState.missing) missing++;
+      words.add(
+        WordAssessment(
+          expected: expected[index],
+          heard: wasRecognized ? expected[index] : null,
+          state: state,
+        ),
+      );
+    }
+
+    if (!live) ledger.finalized = true;
+    final denominator = expected.isEmpty ? 1 : expected.length;
+    final score =
+        ((denominator - missing) / denominator).clamp(0.0, 1.0);
+
+    return RecitationComparison(
+      score: score,
+      correctWords: correct,
+      missingWords: missing,
+      substitutedWords: 0,
+      words: words,
+      nextExpectedIndex: cursor,
+    );
   }
 
   int _min3(int a, int b, int c) {

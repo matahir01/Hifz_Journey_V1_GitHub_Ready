@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/repositories/hifz_repository.dart';
+
 import '../history/history_page.dart';
 import '../shell/app_controller.dart';
 import '../weak/weak_ayahs_page.dart';
@@ -95,19 +97,11 @@ class ProgressPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 14),
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.5,
-              children: [
-                _StatCard(label: 'Introduced', value: stats.introduced),
-                _StatCard(label: 'Learning', value: stats.learning),
-                _StatCard(label: 'Stable', value: stats.stable),
-                _StatCard(label: 'Mastered', value: stats.mastered),
-              ],
+            _MasteryBreakdown(stats: stats),
+            const SizedBox(height: 14),
+            FutureBuilder<List<ActivityDay>>(
+              future: context.read<HifzRepository>().activityDays(days: 7),
+              builder: (context, snapshot) => _WeekActivity(days: snapshot.data ?? const [], streak: streak.streak),
             ),
             const SizedBox(height: 14),
             Card(
@@ -192,4 +186,45 @@ class _StatCard extends StatelessWidget {
           ),
         ),
       );
+}
+
+class _MasteryBreakdown extends StatelessWidget {
+  final HifzStats stats;
+  const _MasteryBreakdown({required this.stats});
+  @override Widget build(BuildContext context) {
+    final values = [stats.introduced, stats.learning, stats.stable, stats.mastered];
+    final total = values.fold<int>(0, (a, b) => a + b);
+    const labels = ['Introduced', 'Learning', 'Stable', 'Mastered'];
+    const colors = [Color(0xFFC6B071), Color(0xFFE0A257), Color(0xFF4F9A78), Color(0xFF0F6D49)];
+    return Card(child: Padding(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Retention profile', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+      const SizedBox(height: 14),
+      ClipRRect(borderRadius: BorderRadius.circular(8), child: Row(children: List.generate(4, (i) => Expanded(flex: total == 0 ? 1 : values[i].clamp(1, total), child: Container(height: 12, color: colors[i]))))),
+      const SizedBox(height: 14),
+      Wrap(spacing: 14, runSpacing: 10, children: List.generate(4, (i) => Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 10, height: 10, decoration: BoxDecoration(color: colors[i], shape: BoxShape.circle)), const SizedBox(width: 6),
+        Text('${labels[i]} ${values[i]}', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700)),
+      ]))),
+    ])));
+  }
+}
+
+class _WeekActivity extends StatelessWidget {
+  final List<ActivityDay> days; final int streak;
+  const _WeekActivity({required this.days, required this.streak});
+  @override Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final active = {for (final item in days) '${item.day.year}-${item.day.month}-${item.day.day}'};
+    final week = List.generate(7, (i) => DateTime(now.year, now.month, now.day).subtract(Duration(days: 6 - i)));
+    const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    final scheme = Theme.of(context).colorScheme;
+    return Card(child: Padding(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Expanded(child: Text('Last 7 days', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800))), const Icon(Icons.local_fire_department_rounded, color: Color(0xFFC4A35A)), Text(' $streak', style: const TextStyle(fontWeight: FontWeight.w900))]),
+      const SizedBox(height: 16),
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: week.map((day) {
+        final done = active.contains('${day.year}-${day.month}-${day.day}');
+        return Column(children: [Text(labels[day.weekday - 1], style: Theme.of(context).textTheme.labelSmall), const SizedBox(height: 7), Container(width: 30, height: 30, decoration: BoxDecoration(shape: BoxShape.circle, color: done ? scheme.primary : scheme.primary.withValues(alpha: .08), border: Border.all(color: done ? scheme.primary : scheme.outlineVariant)), child: done ? const Icon(Icons.check_rounded, size: 17, color: Colors.white) : null)]);
+      }).toList()),
+    ])));
+  }
 }
