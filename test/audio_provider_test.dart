@@ -16,12 +16,12 @@ void main() {
     );
   });
 
-  test('uses canonical CDN editions for the repaired reciters', () {
+  test('uses working CDN editions for the repaired reciters', () {
     expect(
       provider
           .ayahUri(reciter: AudioReciters.sudais, globalAyahNumber: 1)
           .toString(),
-      'https://cdn.islamic.network/quran/audio/192/ar.abdurrahmaansudais/1.mp3',
+      'https://cdn.islamic.network/quran/audio/64/ar.abdurrahmaansudais/1.mp3',
     );
     expect(
       provider
@@ -33,7 +33,7 @@ void main() {
       provider
           .ayahUri(reciter: AudioReciters.abdulBasit, globalAyahNumber: 1)
           .toString(),
-      'https://cdn.islamic.network/quran/audio/192/ar.abdulbasitmurattal/1.mp3',
+      'https://cdn.islamic.network/quran/audio/64/ar.abdulbasitmurattal/1.mp3',
     );
     expect(
       provider
