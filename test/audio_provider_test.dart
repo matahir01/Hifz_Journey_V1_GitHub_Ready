@@ -3,8 +3,9 @@ import 'package:hifz_journey/core/audio/alquran_cloud_audio_provider.dart';
 import 'package:hifz_journey/core/audio/audio_reciter.dart';
 
 void main() {
-  test('Al Quran Cloud provider builds ayah CDN URL', () {
-    const provider = AlQuranCloudAudioProvider();
+  const provider = AlQuranCloudAudioProvider();
+
+  test('Al Quran Cloud provider builds Alafasy ayah CDN URL', () {
     final uri = provider.ayahUri(
       reciter: AudioReciters.alafasy,
       globalAyahNumber: 262,
@@ -15,8 +16,34 @@ void main() {
     );
   });
 
+  test('uses canonical CDN editions for the repaired reciters', () {
+    expect(
+      provider
+          .ayahUri(reciter: AudioReciters.sudais, globalAyahNumber: 1)
+          .toString(),
+      'https://cdn.islamic.network/quran/audio/192/ar.abdurrahmaansudais/1.mp3',
+    );
+    expect(
+      provider
+          .ayahUri(reciter: AudioReciters.shuraim, globalAyahNumber: 1)
+          .toString(),
+      'https://cdn.islamic.network/quran/audio/64/ar.saoodshuraym/1.mp3',
+    );
+    expect(
+      provider
+          .ayahUri(reciter: AudioReciters.abdulBasit, globalAyahNumber: 1)
+          .toString(),
+      'https://cdn.islamic.network/quran/audio/192/ar.abdulbasitmurattal/1.mp3',
+    );
+    expect(
+      provider
+          .ayahUri(reciter: AudioReciters.ajamy, globalAyahNumber: 1)
+          .toString(),
+      'https://cdn.islamic.network/quran/audio/128/ar.ahmedajamy/1.mp3',
+    );
+  });
+
   test('Al Quran Cloud provider rejects invalid global ayah number', () {
-    const provider = AlQuranCloudAudioProvider();
     expect(
       () => provider.ayahUri(
         reciter: AudioReciters.alafasy,

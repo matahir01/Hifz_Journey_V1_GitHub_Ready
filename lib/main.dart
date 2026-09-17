@@ -32,7 +32,7 @@ Future<void> main() async {
   final hifz = HifzRepository(database);
   final notifications = NotificationService();
   final audioLibrary = AudioLibraryService(database);
-  final audio = QuranAudioService();
+  final audio = QuranAudioService(continuousQuran: true);
   final backup = BackupService(database);
   await notifications.init();
 

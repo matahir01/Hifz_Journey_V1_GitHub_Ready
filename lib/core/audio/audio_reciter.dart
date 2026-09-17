@@ -25,7 +25,7 @@ class AudioReciters {
   static const sudais = AudioReciter(
     id: 'alquran_ar_sudais_192',
     name: 'Abdul Rahman Al-Sudais',
-    edition: 'ar.sudais',
+    edition: 'ar.abdurrahmaansudais',
     bitrateKbps: 192,
   );
 
@@ -46,21 +46,21 @@ class AudioReciters {
   static const shuraim = AudioReciter(
     id: 'alquran_ar_shuraim_128',
     name: 'Saud Al-Shuraim',
-    edition: 'ar.shuraim',
-    bitrateKbps: 128,
+    edition: 'ar.saoodshuraym',
+    bitrateKbps: 64,
   );
 
   static const abdulBasit = AudioReciter(
     id: 'alquran_ar_abdulbasit_192',
     name: 'Abdul Basit Abdul Samad',
-    edition: 'ar.abdulbasit',
+    edition: 'ar.abdulbasitmurattal',
     bitrateKbps: 192,
   );
 
   static const ajamy = AudioReciter(
     id: 'alquran_ar_ajamy_128',
     name: 'Ahmed ibn Ali Al-Ajamy',
-    edition: 'ar.ajamy',
+    edition: 'ar.ahmedajamy',
     bitrateKbps: 128,
   );
 

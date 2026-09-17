@@ -10,8 +10,12 @@ import 'audio_reciter.dart';
 import 'alquran_cloud_audio_provider.dart';
 
 class QuranAudioService {
-  final AudioPlayer player = AudioPlayer();
+  static const int _lastGlobalAyahId = 6236;
+  static const int _continuationChunkAyahs = 80;
+
+  final AudioPlayer player = AudioPlayer(maxSkipsOnError: 3);
   final QuranAudioProvider provider;
+  final bool continuousQuran;
   final StreamController<int?> _activeAyahController =
       StreamController<int?>.broadcast();
 
@@ -19,8 +23,10 @@ class QuranAudioService {
   int? _activeAyahId;
   Completer<void>? _playbackCompletion;
 
-  QuranAudioService({QuranAudioProvider? provider})
-      : provider = provider ?? const AlQuranCloudAudioProvider();
+  QuranAudioService({
+    QuranAudioProvider? provider,
+    this.continuousQuran = false,
+  }) : provider = provider ?? const AlQuranCloudAudioProvider();
 
   Stream<int?> get activeAyahIdStream => _activeAyahController.stream;
   Stream<bool> get playingStream => player.playingStream;
@@ -48,16 +54,38 @@ class QuranAudioService {
     );
   }
 
+  MediaItem _mediaItemForGlobalAyah(int ayahId, AudioReciter reciter) {
+    return MediaItem(
+      id: 'ayah-$ayahId',
+      album: 'Qur’an • ${reciter.name}',
+      title: 'Qur’an • Ayah $ayahId',
+      artist: reciter.name,
+      extras: {'ayah_id': ayahId},
+    );
+  }
+
   Future<Uri> _uriForAyah(
     Ayah ayah, {
     required AudioReciter reciter,
     required AudioLibraryService library,
   }) async {
-    final local = await library.forAyah(ayah.id, reciterId: reciter.id);
+    return _uriForGlobalAyah(
+      ayah.id,
+      reciter: reciter,
+      library: library,
+    );
+  }
+
+  Future<Uri> _uriForGlobalAyah(
+    int ayahId, {
+    required AudioReciter reciter,
+    required AudioLibraryService library,
+  }) async {
+    final local = await library.forAyah(ayahId, reciterId: reciter.id);
     if (local != null) return Uri.file(local.localPath);
     return provider.ayahUri(
       reciter: reciter,
-      globalAyahNumber: ayah.id,
+      globalAyahNumber: ayahId,
     );
   }
 
@@ -91,6 +119,7 @@ class QuranAudioService {
       library: library,
       repeatEach: repeat,
       speed: speed,
+      continueBeyondSequence: false,
     );
   }
 
@@ -101,6 +130,7 @@ class QuranAudioService {
     int repeatEach = 1,
     double speed = 1.0,
     int startIndex = 0,
+    bool? continueBeyondSequence,
   }) async {
     if (ayahs.isEmpty) return;
 
@@ -108,7 +138,8 @@ class QuranAudioService {
     final generation = ++_playGeneration;
     final safeStart = startIndex.clamp(0, ayahs.length - 1).toInt();
     final repeats = repeatEach.clamp(1, 20).toInt();
-    final queueAyahs = <Ayah>[];
+    final shouldContinue = continueBeyondSequence ?? continuousQuran;
+    final queueAyahIds = <int>[];
     final sources = <AudioSource>[];
 
     for (var index = safeStart; index < ayahs.length; index++) {
@@ -121,12 +152,49 @@ class QuranAudioService {
       );
       final item = _mediaItem(ayah, reciter);
       for (var repeatIndex = 0; repeatIndex < repeats; repeatIndex++) {
-        queueAyahs.add(ayah);
+        queueAyahIds.add(ayah.id);
         sources.add(AudioSource.uri(uri, tag: item));
       }
     }
 
     if (sources.isEmpty || generation != _playGeneration) return;
+
+    var nextGlobalAyahId = ayahs.last.id + 1;
+
+    Future<({List<AudioSource> sources, List<int> ids})>
+        buildContinuationChunk() async {
+      final chunkSources = <AudioSource>[];
+      final chunkIds = <int>[];
+      if (!shouldContinue || nextGlobalAyahId > _lastGlobalAyahId) {
+        return (sources: chunkSources, ids: chunkIds);
+      }
+
+      final end = (nextGlobalAyahId + _continuationChunkAyahs - 1)
+          .clamp(1, _lastGlobalAyahId)
+          .toInt();
+      for (var ayahId = nextGlobalAyahId; ayahId <= end; ayahId++) {
+        if (generation != _playGeneration) break;
+        final uri = await _uriForGlobalAyah(
+          ayahId,
+          reciter: reciter,
+          library: library,
+        );
+        final item = _mediaItemForGlobalAyah(ayahId, reciter);
+        for (var repeatIndex = 0; repeatIndex < repeats; repeatIndex++) {
+          chunkIds.add(ayahId);
+          chunkSources.add(AudioSource.uri(uri, tag: item));
+        }
+      }
+      nextGlobalAyahId = end + 1;
+      return (sources: chunkSources, ids: chunkIds);
+    }
+
+    if (shouldContinue && nextGlobalAyahId <= _lastGlobalAyahId) {
+      final firstContinuation = await buildContinuationChunk();
+      if (generation != _playGeneration) return;
+      queueAyahIds.addAll(firstContinuation.ids);
+      sources.addAll(firstContinuation.sources);
+    }
 
     await player.setSpeed(speed);
     await player.setAudioSources(sources);
@@ -135,6 +203,26 @@ class QuranAudioService {
     final completion = Completer<void>();
     _playbackCompletion = completion;
     var playbackStarted = false;
+    var continuationLoading = false;
+    final refillThreshold = (repeats * 12) > 24 ? (repeats * 12) : 24;
+
+    Future<void> appendContinuation() async {
+      if (!shouldContinue ||
+          continuationLoading ||
+          nextGlobalAyahId > _lastGlobalAyahId ||
+          generation != _playGeneration) {
+        return;
+      }
+      continuationLoading = true;
+      try {
+        final chunk = await buildContinuationChunk();
+        if (generation != _playGeneration || chunk.sources.isEmpty) return;
+        queueAyahIds.addAll(chunk.ids);
+        await player.addAudioSources(chunk.sources);
+      } finally {
+        continuationLoading = false;
+      }
+    }
 
     final stateSubscription = player.processingStateStream.listen((state) {
       if (!playbackStarted || completion.isCompleted) return;
@@ -148,13 +236,18 @@ class QuranAudioService {
       if (generation != _playGeneration ||
           index == null ||
           index < 0 ||
-          index >= queueAyahs.length) {
+          index >= queueAyahIds.length) {
         return;
       }
-      _setActiveAyah(queueAyahs[index].id);
+      _setActiveAyah(queueAyahIds[index]);
+
+      final remainingSources = queueAyahIds.length - index - 1;
+      if (remainingSources <= refillThreshold) {
+        unawaited(appendContinuation());
+      }
     });
 
-    _setActiveAyah(queueAyahs.first.id);
+    _setActiveAyah(queueAyahIds.first);
     playbackStarted = true;
     unawaited(player.play());
 
