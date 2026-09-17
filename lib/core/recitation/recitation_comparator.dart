@@ -54,6 +54,21 @@ class QuranTextNormalizer {
     'ن': ['نون'],
   };
 
+  static const Map<String, String> _speechAliases = {
+    // Common Uthmani spellings versus the spelling normally returned by
+    // Android/iOS Arabic speech recognizers.
+    'الصلوه': 'الصلاه',
+    'صلوه': 'صلاه',
+    'الزكوه': 'الزكاه',
+    'زكوه': 'زكاه',
+    'الحيوه': 'الحياه',
+    'حيوه': 'حياه',
+    'المشكوه': 'المشكاه',
+    'مشكوه': 'مشكاه',
+    'النجوه': 'النجاه',
+    'نجوه': 'نجاه',
+  };
+
   static String normalize(String input) {
     return input
         .replaceAll(_marks, '')
@@ -72,6 +87,23 @@ class QuranTextNormalizer {
     return value.isEmpty ? const [] : value.split(' ');
   }
 
+  /// A comparison-only representation for speech-recognition output.
+  ///
+  /// We deliberately keep [normalize] suitable for display, then apply the
+  /// extra speech aliases here so a phone returning الصلاه is accepted for
+  /// الصلاة without changing the Qur'an text shown to the user.
+  static String speechCanonical(String input) {
+    var value = normalize(input).replaceAll('ة', 'ه');
+    value = _speechAliases[value] ?? value;
+    return value;
+  }
+
+  static bool wordsEquivalent(String expected, String heard) {
+    final a = speechCanonical(expected);
+    final b = speechCanonical(heard);
+    return a.isNotEmpty && a == b;
+  }
+
   static List<String> collapseMuqattaat(
     List<String> expected,
     List<String> heard,
@@ -84,7 +116,7 @@ class QuranTextNormalizer {
       while (i <= result.length - spoken.length) {
         var matches = true;
         for (var j = 0; j < spoken.length; j++) {
-          if (result[i + j] != spoken[j]) {
+          if (!wordsEquivalent(spoken[j], result[i + j])) {
             matches = false;
             break;
           }
@@ -101,13 +133,6 @@ class QuranTextNormalizer {
   }
 }
 
-/// Keeps already-confirmed Qur'an positions stable during one recitation test.
-///
-/// Android speech services may replace or shorten their partial transcript at
-/// any time. The UI should therefore not use the latest hypothesis as the sole
-/// source of truth. Once a reliable run of Qur'an words has been matched, those
-/// positions are locked for the remainder of the test and can never turn back
-/// into hidden/missed words because of a later provider reset.
 class _CommittedRecitationLedger {
   final Set<int> correctIndices = <int>{};
   final Set<int> missedIndices = <int>{};
@@ -127,10 +152,6 @@ class _CommittedRecitationLedger {
 class RecitationComparator {
   const RecitationComparator();
 
-  /// The page currently owns a const comparator, so the live commitment ledger
-  /// is kept by normalized expected passage. A completed result marks the
-  /// ledger finalized; the next live attempt for the same passage starts clean.
-  /// A stale unfinished attempt is also discarded after 30 minutes.
   static final Map<String, _CommittedRecitationLedger> _ledgers = {};
 
   RecitationComparison compare({
@@ -145,8 +166,6 @@ class RecitationComparator {
     final n = heard.length;
     final passageKey = expected.join(' ');
 
-    // A live Hifz test is intentionally strict: a later word must never unlock
-    // progress while an earlier expected word is still unrecognized.
     if (live || _ledgers.containsKey(passageKey)) {
       return _compareSequential(
         expected: expected,
@@ -166,7 +185,12 @@ class RecitationComparator {
 
     for (var i = 1; i <= m; i++) {
       for (var j = 1; j <= n; j++) {
-        final cost = expected[i - 1] == heard[j - 1] ? 0 : 1;
+        final cost = QuranTextNormalizer.wordsEquivalent(
+          expected[i - 1],
+          heard[j - 1],
+        )
+            ? 0
+            : 1;
         final deletion = dp[i - 1][j] + 1;
         final insertion = dp[i][j - 1] + 1;
         final substitution = dp[i - 1][j - 1] + cost;
@@ -179,7 +203,12 @@ class RecitationComparator {
     final aligned = <WordAssessment>[];
 
     while (i > 0 || j > 0) {
-      if (i > 0 && j > 0 && expected[i - 1] == heard[j - 1]) {
+      if (i > 0 &&
+          j > 0 &&
+          QuranTextNormalizer.wordsEquivalent(
+            expected[i - 1],
+            heard[j - 1],
+          )) {
         aligned.add(
           WordAssessment(
             expected: expected[i - 1],
@@ -218,53 +247,10 @@ class RecitationComparator {
     }
 
     final ordered = aligned.reversed.toList(growable: false);
-    final key = expected.join(' ');
-    final now = DateTime.now();
-    var ledger = _ledgers.putIfAbsent(
-      key,
-      () => _CommittedRecitationLedger(),
-    );
-
-    final stale = now.difference(ledger.lastSeen) > const Duration(minutes: 30);
-    if (stale || (live && ledger.finalized)) {
-      ledger = _CommittedRecitationLedger();
-      _ledgers[key] = ledger;
-    }
-    ledger.lastSeen = now;
-
-    if (live) {
-      _commitReliableRuns(ledger, ordered);
-    } else {
-      // A final Android result is stable enough to preserve every exact match,
-      // including isolated words, while keeping all matches locked earlier in
-      // the session.
-      for (var index = 0; index < ordered.length; index++) {
-        if (ordered[index].state == WordAssessmentState.correct) {
-          ledger.correctIndices.add(index);
-        }
-      }
-    }
-
-    final merged = <WordAssessment>[];
-    for (var index = 0; index < ordered.length; index++) {
-      final word = ordered[index];
-      if (ledger.correctIndices.contains(index)) {
-        merged.add(
-          WordAssessment(
-            expected: word.expected,
-            heard: word.heard ?? word.expected,
-            state: WordAssessmentState.correct,
-          ),
-        );
-      } else {
-        merged.add(word);
-      }
-    }
-
     var correct = 0;
     var missing = 0;
     var substituted = 0;
-    for (final word in merged) {
+    for (final word in ordered) {
       switch (word.state) {
         case WordAssessmentState.correct:
           correct++;
@@ -281,55 +267,22 @@ class RecitationComparator {
     final penalty = missing + substituted;
     final score = ((denominator - penalty) / denominator).clamp(0.0, 1.0);
 
-    if (!live) ledger.finalized = true;
-
     return RecitationComparison(
       score: score,
       correctWords: correct,
       missingWords: missing,
       substitutedWords: substituted,
-      words: merged,
+      words: ordered,
+      nextExpectedIndex: correct + missing + substituted,
     );
   }
 
-  /// Lock only reliable live evidence. A run of two or more consecutive exact
-  /// Qur'an words is strong evidence of position; an isolated word is accepted
-  /// only when it touches an already-locked position. This avoids false jumps
-  /// on very common words such as من / في / لا / هم.
-  void _commitReliableRuns(
-    _CommittedRecitationLedger ledger,
-    List<WordAssessment> words,
-  ) {
-    var start = -1;
-
-    void commitRun(int endExclusive) {
-      if (start < 0) return;
-      final length = endExclusive - start;
-      if (length >= 2) {
-        for (var index = start; index < endExclusive; index++) {
-          ledger.correctIndices.add(index);
-        }
-      } else {
-        final index = start;
-        if (ledger.correctIndices.contains(index - 1) ||
-            ledger.correctIndices.contains(index + 1)) {
-          ledger.correctIndices.add(index);
-        }
-      }
-      start = -1;
-    }
-
-    for (var index = 0; index < words.length; index++) {
-      if (words[index].state == WordAssessmentState.correct) {
-        if (start < 0) start = index;
-      } else {
-        commitRun(index);
-      }
-    }
-    commitRun(words.length);
-  }
-
-
+  /// Live matching is monotonic but no longer blocks on one unrecognized word.
+  ///
+  /// If the recognizer misses the current word and then clearly recognizes one
+  /// of the next few Qur'an words, the skipped word is marked missed and the
+  /// cursor advances. This is important for real recitation: one STT spelling
+  /// error must not freeze the entire remainder of a page.
   RecitationComparison _compareSequential({
     required List<String> expected,
     required List<String> heard,
@@ -349,44 +302,66 @@ class RecitationComparator {
     }
     ledger.lastSeen = now;
 
-    // Re-evaluate the cumulative provider transcript from the beginning so a
-    // corrected Android partial can still satisfy the current expected word.
-    // A word heard out of order only reveals/marks the blocked word; it is not
-    // consumed as progress.
+    // Re-evaluate the cumulative transcript. Both sets are cleared so a later
+    // corrected speech hypothesis can repair an earlier false miss.
     ledger.correctIndices.clear();
+    ledger.missedIndices.clear();
+
     var cursor = 0;
+    const lookAhead = 4;
+
     for (final token in heard) {
       if (cursor >= expected.length) break;
-      if (token == expected[cursor]) {
+
+      if (QuranTextNormalizer.wordsEquivalent(expected[cursor], token)) {
         ledger.correctIndices.add(cursor);
         cursor++;
         continue;
       }
 
-      final appearsLater = expected
-          .skip(cursor + 1)
-          .contains(token);
-      if (appearsLater) {
-        ledger.missedIndices.add(cursor);
+      // A speech engine can simply fail to recognize one word. Look a short
+      // distance ahead for the word the user has already moved on to.
+      final lastCandidate = cursor + lookAhead < expected.length
+          ? cursor + lookAhead
+          : expected.length - 1;
+      var matchedIndex = -1;
+      for (var index = cursor + 1; index <= lastCandidate; index++) {
+        if (QuranTextNormalizer.wordsEquivalent(expected[index], token)) {
+          matchedIndex = index;
+          break;
+        }
       }
+
+      if (matchedIndex >= 0) {
+        for (var skipped = cursor; skipped < matchedIndex; skipped++) {
+          ledger.missedIndices.add(skipped);
+        }
+        ledger.correctIndices.add(matchedIndex);
+        cursor = matchedIndex + 1;
+      }
+      // Otherwise treat this token as recognizer noise. Do not force a wrong
+      // substitution and do not block subsequent words from realigning us.
     }
+
     ledger.nextExpectedIndex = cursor;
 
     final words = <WordAssessment>[];
     var correct = 0;
     var missing = 0;
     for (var index = 0; index < expected.length; index++) {
-      final wasMissed = ledger.missedIndices.contains(index);
       final wasRecognized = ledger.correctIndices.contains(index);
-      final state = wasMissed
-          ? WordAssessmentState.missing
-          : wasRecognized
-              ? WordAssessmentState.correct
+      final wasMissed = ledger.missedIndices.contains(index);
+      final state = wasRecognized
+          ? WordAssessmentState.correct
+          : wasMissed
+              ? WordAssessmentState.missing
               : live
                   ? WordAssessmentState.pending
                   : WordAssessmentState.missing;
+
       if (state == WordAssessmentState.correct) correct++;
       if (state == WordAssessmentState.missing) missing++;
+
       words.add(
         WordAssessment(
           expected: expected[index],
